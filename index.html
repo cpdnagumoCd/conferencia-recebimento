@@ -374,11 +374,15 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; }
 .pill-dia[data-rede="online"]::before { background: #37d27a; }
 .pill-dia[data-rede="enviando"]::before, .pill-dia[data-rede="conectando"]::before, .pill-dia[data-rede="offline"]::before { background: #f5b942; }
 .pill-dia[data-rede="erro"]::before { background: var(--red); }
-.t tbody tr.flash td { animation: flash 2.4s ease-out; }
-@keyframes flash { 0%, 25% { background: #fff4c2; } }
 .girando { display: inline-block; width: 34px; height: 34px; border-radius: 50%; border: 3px solid var(--navy-100); border-top-color: var(--navy); animation: gira .8s linear infinite; margin-bottom: 10px; }
 @keyframes gira { to { transform: rotate(360deg); } }
 .botoes-nota { display: flex; justify-content: flex-end; gap: 10px; padding: 0 20px 20px; flex-wrap: wrap; }
+/* lista de cargas com barra de rolagem própria (cabeçalho e totais fixos) */
+@media (min-width: 641px) {
+  .card-lista .tabela-box { max-height: calc(100vh - 210px); min-height: 240px; overflow: auto; }
+  .card-lista .t thead th { position: sticky; top: 0; z-index: 2; }
+  .card-lista .t tfoot td { position: sticky; bottom: 0; z-index: 2; }
+}
 .mais-antigas { display: flex; justify-content: center; padding: 12px; border-top: 1px solid var(--line-2); }
 
 
@@ -461,7 +465,7 @@ const STATUS = {
   nao_recebido: { nome: "Não recebido", selo: "s-red" },
 };
 
-const S = { records: [], date: null, filtro: "todos", q: "", saTodas: false, qSa: "", pagina: "conferencia", gaveta: null, flash: {} }; // flash: id -> até quando a linha fica destacada
+const S = { records: [], date: null, filtro: "todos", q: "", saTodas: false, qSa: "", pagina: "conferencia", gaveta: null };
 
 /* ---------------------------------------------------------------- utilidades */
 const $ = (s, r = document) => r.querySelector(s);
@@ -544,8 +548,6 @@ const FB_URLS = ["app", "firestore"].map((m) => `https://www.gstatic.com/firebas
 const JANELA_DIAS = 60; // dias acompanhados em tempo real (os mais antigos sob demanda)
 const REDE = { estado: NUVEM ? "conectando" : "local", pendente: false, carregado: !NUVEM, tudo: false };
 let db = null, FV = null, pararEscuta = null, ultimoJSON = {};
-const meus = {}; // id -> hora da última alteração feita neste aparelho (para não piscar a própria linha)
-const marcarMeu = (id) => (meus[id] = Date.now());
 const addDias = (iso, n) => { const [a, m, d] = iso.split("-").map(Number); const x = new Date(a, m - 1, d + n); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`; };
 const docDia = (d) => db.collection("dias").doc(d);
 const semId = (r) => { const o = Object.assign({}, r); delete o.id; return limpo(o); };
@@ -603,8 +605,7 @@ function escutar() {
         if (!r || !r.origem) return; // ignora restos de registros excluídos
         const rec = Object.assign({}, r, { id, data: v.data || d.id });
         recs.push(rec);
-        json[id] = JSON.stringify(rec);
-        if (REDE.carregado && ultimoJSON[id] !== json[id] && !(Date.now() - (meus[id] || 0) < 8000)) S.flash[id] = Date.now() + 2400;
+        json[id] = JSON.stringify(rec, Object.keys(rec).sort()); // chaves em ordem: o servidor pode devolvê-las em outra ordem
       });
     });
     const mesmo = REDE.carregado && Object.keys(json).length === Object.keys(ultimoJSON).length && Object.keys(json).every((k) => json[k] === ultimoJSON[k]);
@@ -673,13 +674,11 @@ function separarNovos(existentes, recs) {
 const BD = {
   criar(rec) {
     if (!NUVEM) { S.records.push(rec); salvarLocal(); aoMudarDados(); return; }
-    marcarMeu(rec.id);
     docDia(rec.data).set({ data: rec.data, itens: { [rec.id]: semId(rec) } }, { merge: true }).catch(falhaGravacao);
   },
   /** Grava só os campos informados, para não desfazer o que outra pessoa alterou no mesmo registro. */
   alterar(rec, campos) {
     if (!NUVEM) { const r = findRec(rec.id); if (r) Object.assign(r, campos); salvarLocal(); aoMudarDados(); return; }
-    marcarMeu(rec.id);
     if (campos.data && campos.data !== rec.data) { // mudou de dia: move o registro para o documento do outro dia
       const b = db.batch();
       b.update(docDia(rec.data), { [`itens.${rec.id}`]: FV.delete() });
@@ -724,7 +723,7 @@ const BD = {
         const { novos, repetidas } = separarNovos(existentes, lista);
         if (novos.length) {
           const add = {};
-          novos.forEach((r) => { add[r.id] = semId(r); marcarMeu(r.id); });
+          novos.forEach((r) => { add[r.id] = semId(r); });
           tx.set(docDia(dia), { data: dia, itens: add }, { merge: true });
         }
         return { novos, repetidas };
@@ -1072,7 +1071,7 @@ function tabela(recs, modo) {
       : `<span class="vazio">—</span>`;
     const quando = r.status !== "pendente" && r.conferidoEm
       ? `<span class="quando">${r.status === "recebido" ? "Recebido" : "Marcado"} às ${esc(r.conferidoEm)}</span>` : "";
-    return `<tr class="st-${r.status}${novoH ? " novo-h" : ""}${(S.flash[r.id] || 0) > Date.now() ? " flash" : ""}" data-id="${r.id}">
+    return `<tr class="st-${r.status}${novoH ? " novo-h" : ""}" data-id="${r.id}">
       ${comData ? `<td class="c-data"><b>${isoToBR(r.data)}</b></td>` : ""}
       <td class="c-hora">${hora}</td>
       <td class="c-box">${r.box ? `<span class="box-tag">${esc(r.box)}</span>` : `<span class="vazio">—</span>`}</td>
@@ -1105,6 +1104,15 @@ function tabela(recs, modo) {
       <td colspan="2" class="f-vazio"></td>
     </tr></tfoot>
   </table></div>`;
+}
+
+/** Redesenha uma tabela mantendo a posição da barra de rolagem da lista. */
+function trocarTabela(sel, html) {
+  const el = $(sel), box = el.querySelector(".tabela-box");
+  const top = box ? box.scrollTop : 0, left = box ? box.scrollLeft : 0;
+  el.innerHTML = html;
+  const novo = el.querySelector(".tabela-box");
+  if (novo) { novo.scrollTop = top; novo.scrollLeft = left; }
 }
 
 const vazio = (icone, titulo, texto, botoes = "") => `<div class="vazio-box">${ic(icone)}<b>${titulo}</b><p>${texto}</p>${botoes ? `<div class="botoes">${botoes}</div>` : ""}</div>`;
@@ -1179,13 +1187,13 @@ function atualizarConferencia() {
 
   const filtroSt = S.filtro === "todos" || S.filtro === "sem_agenda" ? () => true : (r) => r.status === S.filtro;
   const mostra = ag.filter(filtroSt).filter(busca(S.q)).sort(recCmp);
-  $("#tabAgenda").innerHTML = mostra.length ? tabela(mostra, "agenda")
+  trocarTabela("#tabAgenda", mostra.length ? tabela(mostra, "agenda")
     : ag.length ? vazio("i-search", "Nenhuma agenda encontrada", "Nenhuma agenda corresponde ao filtro ou à busca.")
-    : vazio("i-calendar", "Sem agendas nesta data", "Não há relatório importado para este dia.", `<button class="btn btn-primary" data-acao="importar">${ic("i-upload")}Importar relatório</button>`);
+    : vazio("i-calendar", "Sem agendas nesta data", "Não há relatório importado para este dia.", `<button class="btn btn-primary" data-acao="importar">${ic("i-upload")}Importar relatório</button>`));
 
   const saMostra = sa.filter(busca(S.q)).sort(recCmp);
-  $("#tabSa").innerHTML = saMostra.length ? tabela(saMostra, "sa")
-    : vazio("i-truck", sa.length ? "Nenhum registro encontrado" : "Nenhum recebimento sem agenda", sa.length ? "Nenhum registro corresponde à busca." : "Use o botão <b>Recebido sem agenda</b> para registrar um fornecedor que chegou sem agendamento.");
+  trocarTabela("#tabSa", saMostra.length ? tabela(saMostra, "sa")
+    : vazio("i-truck", sa.length ? "Nenhum registro encontrado" : "Nenhum recebimento sem agenda", sa.length ? "Nenhum registro corresponde à busca." : "Use o botão <b>Recebido sem agenda</b> para registrar um fornecedor que chegou sem agendamento."));
 }
 
 /* ---------------------------------------------------------------- página: sem agenda */
@@ -1221,9 +1229,9 @@ function atualizarSemAgenda() {
     <div><small>Recebidos</small><b>${fmt(recs.filter((r) => r.status === "recebido").length)}</b></div>
     <div><small>Volumes</small><b>${fmt(soma(recs, "volumes"))}</b></div>
     <div><small>Paletes</small><b>${fmt(soma(recs, "paletes"))}</b></div>`;
-  $("#saTab").innerHTML = recs.length ? tabela(recs, "historico")
+  trocarTabela("#saTab", recs.length ? tabela(recs, "historico")
     : vazio("i-truck", "Nenhum recebimento sem agenda", base.length ? "Nenhum registro corresponde à busca." : (S.saTodas ? "Ainda não há registros." : `Não há registros em ${isoToBR(S.date)}.`),
-      `<button class="btn btn-red" data-acao="novo-sa">${ic("i-plus")}Recebido sem agenda</button>`);
+      `<button class="btn btn-red" data-acao="novo-sa">${ic("i-plus")}Recebido sem agenda</button>`));
 }
 
 /* ---------------------------------------------------------------- página: importar */
