@@ -1,0 +1,28 @@
+rules_version = '2';
+
+// Regras da Conferência de Recebimento.
+// Cole este conteúdo em: Firebase Console > Firestore Database > Regras > Publicar.
+// Sem login: quem tem o link usa o app (o nome de quem conferiu fica gravado em cada marcação).
+// As regras só aceitam o formato do app: um documento por dia, id AAAA-MM-DD, com os registros em "itens".
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    match /dias/{dia} {
+      function formatoOk() {
+        return dia.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+            && request.resource.data.keys().hasOnly(['data', 'itens'])
+            && request.resource.data.data == dia
+            && request.resource.data.itens is map
+            && request.resource.data.itens.size() <= 500;
+      }
+      allow read: if true;
+      allow create, update: if formatoOk();
+      allow delete: if true;
+    }
+
+    // Qualquer outra coleção fica fechada.
+    match /{documento=**} {
+      allow read, write: if false;
+    }
+  }
+}
