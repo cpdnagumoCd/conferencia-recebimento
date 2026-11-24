@@ -1,8 +1,8 @@
 rules_version = '2';
 
-// Regras da Conferência de Recebimento.
+// Regras do Recebimento de Notas Fiscais.
 // Cole este conteúdo em: Firebase Console > Firestore Database > Regras > Publicar.
-// Sem login: quem tem o link usa o app (o nome de quem conferiu fica gravado em cada marcação).
+// Sem login: quem tem o link usa o app.
 // As regras só aceitam o formato do app: um documento por dia, id AAAA-MM-DD, com os registros em "itens".
 service cloud.firestore {
   match /databases/{database}/documents {

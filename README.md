@@ -1,4 +1,4 @@
-# Conferência de Recebimento · Nagumo
+# Recebimento de Notas Fiscais · Nagumo
 
 Importa o relatório de agendamento do Acrux, marca cada agenda como **recebida** ou **não recebida** e registra fornecedores recebidos **sem agenda**.
 Os dados ficam no **Firebase (Cloud Firestore)**: o que um colaborador marca aparece na hora para todos os outros, em qualquer computador ou celular.
@@ -41,7 +41,7 @@ Não é preciso ativar o Authentication: o app não tem login nem pede nome; que
 
 - **Quem importa o relatório**: menu **Importar relatório** > arraste o `.xls` do Acrux. As agendas aparecem na hora para todos.
   Importar o mesmo relatório de novo (ou duas pessoas ao mesmo tempo) não duplica nada.
-- **Quem confere**: tela **Conferência**, botões **Recebido** / **Não recebido** em cada agenda, e **Recebido sem agenda** para cargas sem agendamento.
+- **Quem controla o recebimento**: tela **Recebimento**, botões **Recebido** / **Não recebido** em cada agenda, e **Recebido sem agenda** para cargas sem agendamento.
 - Linhas alteradas por outra pessoa piscam em amarelo por um instante.
 - O rodapé do menu mostra a conexão: **Online · tempo real**, **Enviando alterações…** ou **Sem conexão**.
   Sem internet, dá para continuar marcando: as alterações são enviadas quando a conexão voltar.
@@ -54,4 +54,4 @@ Não é preciso ativar o Authentication: o app não tem login nem pede nome; que
   As regras só aceitam gravações no formato do app.
 - **Custo**: o plano gratuito do Firebase (Spark) é suficiente. Cada dia é um único documento, e o app acompanha em tempo real só os
   últimos 60 dias. Datas mais antigas aparecem pelo botão no fim da tela **Importar relatório**.
-- **Backup**: o botão **Exportar Excel** baixa a conferência do dia em planilha.
+- **Backup**: o botão **Exportar Excel** baixa o recebimento do dia em planilha.
