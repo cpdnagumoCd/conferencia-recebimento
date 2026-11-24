@@ -451,7 +451,7 @@ const IMG = {
 };
 
 const PAGINAS = {
-  conferencia: { menu: "Conferência", ic: "i-clipboard" },
+  conferencia: { menu: "Recebimento", ic: "i-clipboard" },
   semagenda: { menu: "Sem agenda", ic: "i-truck" },
   importar: { menu: "Importar relatório", ic: "i-upload" },
 };
@@ -990,7 +990,7 @@ function renderSidebar() {
       <div class="atual"><span class="ico">${ic("i-calendar")}</span><div><b>${isoToBR(S.date)}</b><span>${esc(empresaDia() || diaSemana(S.date))}</span></div></div>
       ${ag.length ? `<div class="sb-prog">
         <div class="barra"><i class="ok" style="width:${(ok / ag.length) * 100}%"></i><i class="no" style="width:${(no / ag.length) * 100}%"></i></div>
-        <span>${ok + no} de ${ag.length} agendas conferidas</span>
+        <span>${ok + no} de ${ag.length} agendas marcadas</span>
       </div>` : ""}
     </div>
     <nav class="sb-nav">${link("conferencia")}${link("semagenda")}${link("importar")}</nav>
@@ -1052,7 +1052,7 @@ function atualizarTudo() {
     $("#main").innerHTML = `<section class="card">${REDE.estado === "erro"
       ? vazio("i-alert", "Não foi possível conectar", "Verifique a internet deste aparelho e tente de novo. As informações ficam no servidor e aparecem assim que a conexão voltar.",
         `<button class="btn btn-primary" data-acao="reconectar">${ic("i-refresh")}Tentar de novo</button>`)
-      : `<div class="vazio-box"><span class="girando"></span><b>Carregando…</b><p>Buscando as agendas e conferências no servidor.</p></div>`}</section>`;
+      : `<div class="vazio-box"><span class="girando"></span><b>Carregando…</b><p>Buscando as agendas e os recebimentos no servidor.</p></div>`}</section>`;
     return;
   }
   ({ conferencia: paginaConferencia, semagenda: paginaSemAgenda, importar: paginaImportar })[S.pagina]();
@@ -1082,7 +1082,7 @@ function tabela(recs, modo) {
       <td class="din c-num" data-l="Vol.">${fmt(r.volumes)}</td>
       <td class="din c-num" data-l="Pal.">${fmt(r.paletes)}</td>
       <td class="c-conf"><div class="conf">
-        <div class="seg seg-sm" role="group" aria-label="Conferência de ${esc(r.fornecedor)}">
+        <div class="seg seg-sm" role="group" aria-label="Recebimento de ${esc(r.fornecedor)}">
           <button class="ok ${r.status === "recebido" ? "on green" : ""}" data-acao="status" data-st="recebido" aria-pressed="${r.status === "recebido"}">${ic("i-check")}Recebido</button>
           <button class="no ${r.status === "nao_recebido" ? "on red" : ""}" data-acao="status" data-st="nao_recebido" aria-pressed="${r.status === "nao_recebido"}">${ic("i-x")}Não recebido</button>
         </div>${quando}
@@ -1094,7 +1094,7 @@ function tabela(recs, modo) {
     <thead><tr>
       ${comData ? "<th>Data</th>" : ""}
       <th>${modo === "agenda" ? "Horário" : "Chegada"}</th><th>Box</th><th>Fornecedor</th><th>Nota/Pedido</th>
-      <th class="r">Valor (R$)</th><th class="r">Volumes</th><th class="r">Paletes</th><th>Conferência</th><th></th>
+      <th class="r">Valor (R$)</th><th class="r">Volumes</th><th class="r">Paletes</th><th>Recebimento</th><th></th>
     </tr></thead>
     <tbody>${linhas}</tbody>
     <tfoot><tr>
@@ -1112,7 +1112,7 @@ const vazio = (icone, titulo, texto, botoes = "") => `<div class="vazio-box">${i
 /* ---------------------------------------------------------------- página: conferência */
 function cabConferencia() {
   cabecalho(
-    "Conferência de recebimento",
+    "Recebimento de notas fiscais",
     `${diaSemana(S.date) ? diaSemana(S.date).replace(/^./, (c) => c.toUpperCase()) + ", " : ""}${isoToBR(S.date)}${empresaDia() ? " · " + esc(empresaDia()) : ""}`,
     `${datas().length ? diaNav() : ""}
      <button class="btn btn-outline" data-acao="exportar" ${doDia().length ? "" : "disabled"}>${ic("i-download")}Exportar Excel</button>
@@ -1124,7 +1124,7 @@ function paginaConferencia() {
 
   if (!S.records.length) {
     $("#main").innerHTML = `<section class="card">${vazio("i-upload", "Nenhum relatório importado",
-      "Importe o relatório de agendamento exportado do Acrux (.xls) para começar a conferência do dia. Você também pode arrastar o arquivo para esta página.",
+      "Importe o relatório de agendamento exportado do Acrux (.xls) para começar o controle de recebimento do dia. Você também pode arrastar o arquivo para esta página.",
       `<button class="btn btn-primary" data-acao="importar">${ic("i-upload")}Importar relatório</button>`)}</section>`;
     return;
   }
@@ -1164,14 +1164,14 @@ function atualizarConferencia() {
 
   $("#kpis").innerHTML = `
     <button class="card kpi destaque ${S.filtro === "todos" ? "on" : ""}" data-acao="filtro" data-f="todos">
-      <small>Agendas conferidas</small>
+      <small>Agendas marcadas</small>
       <b>${ok.length + no.length} <em>de ${ag.length}</em></b>
       <div class="medidor"><i class="ok" style="width:${pct(ok.length)}%"></i><i class="no" style="width:${pct(no.length)}%"></i></div>
       <span>${fmt(Math.round(pct(ok.length + no.length)))}% do dia · ${fmt(soma(ag, "volumes"))} vol.</span>
     </button>
     ${kpi("recebido", "k-ok", "Recebidos", "var(--green-600)", ok.length, `${fmt(soma(ok, "volumes"))} vol. · ${fmt(soma(ok, "paletes"))} pal.`)}
     ${kpi("nao_recebido", "k-no", "Não recebidos", "var(--red-700)", no.length, `${fmt(soma(no, "volumes"))} vol. · ${fmt(soma(no, "paletes"))} pal.`)}
-    ${kpi("pendente", "", "Pendentes", "#9aa7b8", pe.length, `${fmt(soma(pe, "volumes"))} vol. a conferir`)}
+    ${kpi("pendente", "", "Pendentes", "#9aa7b8", pe.length, `${fmt(soma(pe, "volumes"))} vol. aguardando`)}
     ${kpi("sem_agenda", "k-sa", "Sem agenda", "var(--amber-600)", sa.length, `${fmt(soma(sa, "volumes"))} vol. · ${fmt(soma(sa, "paletes"))} pal.`)}`;
 
   const filtros = [["todos", "Todas", ag.length], ["pendente", "Pendentes", pe.length], ["recebido", "Recebidas", ok.length], ["nao_recebido", "Não recebidas", no.length]];
@@ -1344,7 +1344,7 @@ function abrirGaveta(rec) {
           </div>
         </section>
         <section class="card">
-          <div class="card-h"><h2><span class="barra"></span>Conferência</h2></div>
+          <div class="card-h"><h2><span class="barra"></span>Recebimento</h2></div>
           <div class="card-b grade">
             <div class="field c6"><span class="rotulo">Status</span><div class="seg" id="gSt" role="group" aria-label="Status">${segSt()}</div></div>
             <div class="field c6"><label for="gObs">Observação</label><textarea class="input" id="gObs" placeholder="Ex.: motivo da recusa, divergência de volumes, placa do veículo…">${esc(r.obs)}</textarea></div>
@@ -1438,14 +1438,14 @@ function exportarExcel() {
       "Valor (R$)": r.peso ?? "", "Volumes": r.volumes ?? "", "Paletes": r.paletes ?? "",
       "Tipo Carga": r.tipoCarga || "", "Tipo Entrega": r.tipoEntrega || "",
       "Origem": r.origem === "sem_agenda" ? "Sem agenda" : "Agendado",
-      "Status": STATUS[r.status] ? STATUS[r.status].nome : r.status, "Conferido às": r.conferidoEm || "", "Observação": r.obs || "",
+      "Status": STATUS[r.status] ? STATUS[r.status].nome : r.status, "Marcado às": r.conferidoEm || "", "Observação": r.obs || "",
     }));
     const ws = XLSX.utils.json_to_sheet(linhas);
     ws["!cols"] = [16, 11, 10, 9, 10, 14, 48, 12, 9, 9, 12, 13, 12, 13, 12, 40].map((wch) => ({ wch }));
     ws["!autofilter"] = { ref: ws["!ref"] };
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Conferência");
-    const nome = `Conferencia_Recebimento_${S.date}.xlsx`;
+    XLSX.utils.book_append_sheet(wb, ws, "Recebimento");
+    const nome = `Recebimento_NF_${S.date}.xlsx`;
     XLSX.writeFile(wb, nome);
     toast(`Planilha exportada: ${nome}`);
   });
