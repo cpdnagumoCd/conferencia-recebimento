@@ -25,8 +25,7 @@ A página é publicada no **GitHub Pages**.
    Copie os valores para `app/firebase-config.js` (na pasta *Agendamento*) e gere a página de novo com
    `python app/gerar_html.py`. Ou envie o bloco para o Claude, que preenche e gera.
 
-Não é preciso ativar o Authentication: o app não tem login. No primeiro acesso, cada pessoa informa o próprio nome, que fica gravado
-em cada marcação ("Recebido por Ana às 10:32").
+Não é preciso ativar o Authentication: o app não tem login nem pede nome; quem tem o link usa.
 
 ## 2. Publicar no GitHub Pages
 

@@ -360,8 +360,6 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; }
 }
 
 /* ---------------------------------------------------------------- tempo real (Firebase) */
-.sb-rodape .avatar { border: 0; cursor: pointer; font: inherit; font-weight: 700; font-size: 13px; letter-spacing: .02em; }
-.sb-rodape .avatar:hover { background: rgba(255, 255, 255, .22); }
 .sb-rodape .avatar svg { width: 18px; height: 18px; }
 .sb-rodape .quem b { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sb-rodape .btn-icon { color: #fff; }
@@ -382,8 +380,7 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; }
 @keyframes gira { to { transform: rotate(360deg); } }
 .botoes-nota { display: flex; justify-content: flex-end; gap: 10px; padding: 0 20px 20px; flex-wrap: wrap; }
 .mais-antigas { display: flex; justify-content: center; padding: 12px; border-top: 1px solid var(--line-2); }
-.modal .field { display: grid; gap: 6px; }
-.nome-h svg { color: var(--navy-600) !important; }
+
 
 </style>
 </head>
@@ -408,7 +405,6 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; }
     <symbol id="i-info" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.01"/></symbol>
     <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 12h6M9 16h6"/></symbol>
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/></symbol>
-    <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.5" r="3.8"/><path d="M4.5 20c1.2-3.6 4-5.4 7.5-5.4s6.3 1.8 7.5 5.4"/></symbol>
     <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3"/><path d="M19.5 4.5v4.2h-4.2"/></symbol>
   </svg>
 
@@ -465,7 +461,7 @@ const STATUS = {
   nao_recebido: { nome: "Não recebido", selo: "s-red" },
 };
 
-const S = { records: [], date: null, filtro: "todos", q: "", saTodas: false, qSa: "", pagina: "conferencia", nome: "", gaveta: null, flash: {} }; // flash: id -> até quando a linha fica destacada
+const S = { records: [], date: null, filtro: "todos", q: "", saTodas: false, qSa: "", pagina: "conferencia", gaveta: null, flash: {} }; // flash: id -> até quando a linha fica destacada
 
 /* ---------------------------------------------------------------- utilidades */
 const $ = (s, r = document) => r.querySelector(s);
@@ -522,18 +518,15 @@ const natCmp = (a, b) => String(a || "").localeCompare(String(b || ""), "pt-BR",
 const recCmp = (a, b) => natCmp(a.data, b.data) || natCmp(a.horaInicio || "99:99", b.horaInicio || "99:99") || natCmp(a.box, b.box) || natCmp(a.fornecedor, b.fornecedor);
 
 /* ---------------------------------------------------------------- preferências deste aparelho */
-const PREFS = { date: null, nome: "", migrado: false };
+const PREFS = { date: null, migrado: false };
 function carregarPrefs() {
   try { Object.assign(PREFS, JSON.parse(localStorage.getItem(PREF_KEY) || "{}")); } catch (e) { /* sem preferências */ }
   S.date = PREFS.date || null;
-  S.nome = PREFS.nome || "";
 }
 function salvarPrefs() {
-  PREFS.date = S.date; PREFS.nome = S.nome;
+  PREFS.date = S.date; delete PREFS.nome; // nome da versão anterior: não é mais usado
   try { localStorage.setItem(PREF_KEY, JSON.stringify(PREFS)); } catch (e) { /* ignora */ }
 }
-const quem = () => S.nome || "";
-const primeiroNome = (n) => String(n || "").trim().split(/\s+/)[0] || "";
 const agoraISO = () => new Date().toISOString();
 const limpo = (o) => JSON.parse(JSON.stringify(o)); // tira campos undefined (o Firestore não aceita)
 
@@ -769,39 +762,6 @@ async function descartarDadosAntigos() {
   paginaImportar();
 }
 
-/* ---------------------------------------------------------------- nome de quem está usando */
-function pedirNome(obrigatorio) {
-  fecharCamadas();
-  const wrap = document.createElement("div");
-  wrap.className = "modal-wrap";
-  wrap.innerHTML = `
-    <div class="fundo" ${obrigatorio ? "" : "data-x"}></div>
-    <form class="modal" role="dialog" aria-modal="true" aria-labelledby="nTit" novalidate>
-      <div class="modal-h nome-h">${ic("i-user")}<h3 id="nTit">${obrigatorio ? "Quem está conferindo?" : "Trocar nome"}</h3></div>
-      <div class="modal-b">
-        <p style="margin:0 0 12px">O seu nome fica registrado em cada marcação, por exemplo <b>“Recebido por Ana às 10:32”</b>.</p>
-        <div class="field"><label for="nNome">Seu nome</label><input class="input" id="nNome" maxlength="40" autocomplete="name" value="${esc(S.nome)}" placeholder="Ex.: Ana Souza"></div>
-      </div>
-      <div class="modal-f">
-        ${obrigatorio ? "" : `<button type="button" class="btn btn-outline" data-x>Cancelar</button>`}
-        <button type="submit" class="btn btn-primary">${ic("i-check")}Continuar</button>
-      </div>
-    </form>`;
-  $("#camada").appendChild(wrap);
-  const inp = $("#nNome", wrap);
-  $$("[data-x]", wrap).forEach((b) => (b.onclick = fecharCamadas));
-  $("form", wrap).addEventListener("submit", (e) => {
-    e.preventDefault();
-    const nome = inp.value.replace(/\s+/g, " ").trim();
-    inp.classList.toggle("invalido", !nome);
-    if (!nome) { inp.focus(); return; }
-    S.nome = nome; salvarPrefs();
-    fecharCamadas();
-    renderStatus();
-  });
-  setTimeout(() => inp.focus(), 50);
-}
-
 /* ---------------------------------------------------------------- avisos e confirmação */
 function toast(msg, tipo = "ok") {
   const el = document.createElement("div");
@@ -914,8 +874,8 @@ function lerPlanilha(buf) {
 const chave = (r) => [r.data, r.horaInicio, r.horaFim, norm(r.box), norm(r.fornecedor), norm(r.notaPedido), r.volumes, r.peso].join("|");
 
 const novaAgenda = (row) => Object.assign({
-  id: uid(), key: chave(row), origem: "agenda", status: "pendente", conferidoEm: "", conferidoPor: "", obs: "",
-  criadoEm: agoraISO(), criadoPor: quem(),
+  id: uid(), key: chave(row), origem: "agenda", status: "pendente", conferidoEm: "", obs: "",
+  criadoEm: agoraISO(),
 }, row, { data: row.data || S.date || todayISO() });
 
 const lerArquivo = (file) => new Promise((res, rej) => {
@@ -1040,7 +1000,6 @@ function renderSidebar() {
   renderStatus();
 }
 
-const iniciais = (n) => { const p = String(n || "").trim().split(/\s+/).filter(Boolean); return ((p[0] || "?")[0] + (p.length > 1 ? p[p.length - 1][0] : "")).toUpperCase(); };
 function renderStatus() {
   const el = $("#sbStatus");
   if (!el) return;
@@ -1055,9 +1014,9 @@ function renderStatus() {
   }[st];
   $$(".pill-dia").forEach((p) => { p.dataset.rede = st; p.title = txt; }); // bolinha de conexão no celular
   el.innerHTML = `
-    <button class="avatar" data-acao="trocar-nome" title="Trocar nome">${S.nome ? esc(iniciais(S.nome)) : ic("i-user")}</button>
+    <span class="avatar">${ic("i-database")}</span>
     <div class="quem">
-      <b>${S.nome ? esc(S.nome) : "Sem nome"}</b>
+      <b>${NUVEM ? "Dados compartilhados" : "Dados locais"}</b>
       <small class="rede ${st}"><i></i>${txt}</small>
     </div>
     ${st === "erro" ? `<button class="btn-icon" data-acao="reconectar" title="Tentar de novo" aria-label="Tentar conectar de novo">${ic("i-refresh")}</button>` : ""}`;
@@ -1111,9 +1070,8 @@ function tabela(recs, modo) {
     const hora = r.horaInicio
       ? `<span class="hora">${esc(r.horaInicio)}</span>${r.horaFim ? `<span class="ate">– ${esc(r.horaFim)}</span>` : ""}`
       : `<span class="vazio">—</span>`;
-    const por = primeiroNome(r.conferidoPor);
     const quando = r.status !== "pendente" && r.conferidoEm
-      ? `<span class="quando" ${r.conferidoPor ? `title="${esc(r.conferidoPor)}"` : ""}>${r.status === "recebido" ? "Recebido" : "Marcado"}${por ? ` por ${esc(por)}` : ""} às ${esc(r.conferidoEm)}</span>` : "";
+      ? `<span class="quando">${r.status === "recebido" ? "Recebido" : "Marcado"} às ${esc(r.conferidoEm)}</span>` : "";
     return `<tr class="st-${r.status}${novoH ? " novo-h" : ""}${(S.flash[r.id] || 0) > Date.now() ? " flash" : ""}" data-id="${r.id}">
       ${comData ? `<td class="c-data"><b>${isoToBR(r.data)}</b></td>` : ""}
       <td class="c-hora">${hora}</td>
@@ -1428,12 +1386,12 @@ function abrirGaveta(rec) {
       peso: parseNum($("#gPeso").value), volumes: parseNum($("#gVol").value), paletes: parseNum($("#gPal").value),
       tipoCarga: $("#gCarga").value.trim(), tipoEntrega: $("#gEnt").value.trim(), obs: $("#gObs").value.trim(),
     };
-    const conf = status === "pendente" ? { conferidoEm: "", conferidoPor: "" } : { conferidoEm: nowHM(), conferidoPor: quem() };
+    const conf = status === "pendente" ? { conferidoEm: "" } : { conferidoEm: nowHM() };
     S.date = data;
     salvarPrefs();
     fecharCamadas();
     if (novo) {
-      BD.criar(Object.assign({ id: uid(), origem: "sem_agenda", criadoEm: agoraISO(), criadoPor: quem(), status }, conf, dados));
+      BD.criar(Object.assign({ id: uid(), origem: "sem_agenda", criadoEm: agoraISO(), status }, conf, dados));
       toast(`${forn} registrado como recebido sem agenda.`);
     } else {
       // grava só o que foi mudado nesta gaveta: alterações feitas ao mesmo tempo em outro aparelho são mantidas
@@ -1441,7 +1399,7 @@ function abrirGaveta(rec) {
       Object.keys(dados).forEach((k) => { if (String(dados[k] ?? "") !== String(rec[k] ?? "")) campos[k] = dados[k]; });
       if (status !== rec.status) Object.assign(campos, { status }, conf);
       if (Object.keys(campos).length) {
-        BD.alterar(rec, Object.assign(campos, { alteradoEm: agoraISO(), alteradoPor: quem() }));
+        BD.alterar(rec, Object.assign(campos, { alteradoEm: agoraISO() }));
         toast("Registro atualizado.");
       }
     }
@@ -1465,9 +1423,9 @@ function marcar(id, st) {
   const r = findRec(id);
   if (!r) return;
   const campos = r.status === st
-    ? { status: "pendente", conferidoEm: "", conferidoPor: "" }
-    : { status: st, conferidoEm: nowHM(), conferidoPor: quem() };
-  BD.alterar(r, Object.assign(campos, { alteradoEm: agoraISO(), alteradoPor: quem() }));
+    ? { status: "pendente", conferidoEm: "" }
+    : { status: st, conferidoEm: nowHM() };
+  BD.alterar(r, Object.assign(campos, { alteradoEm: agoraISO() }));
 }
 
 function exportarExcel() {
@@ -1480,10 +1438,10 @@ function exportarExcel() {
       "Valor (R$)": r.peso ?? "", "Volumes": r.volumes ?? "", "Paletes": r.paletes ?? "",
       "Tipo Carga": r.tipoCarga || "", "Tipo Entrega": r.tipoEntrega || "",
       "Origem": r.origem === "sem_agenda" ? "Sem agenda" : "Agendado",
-      "Status": STATUS[r.status] ? STATUS[r.status].nome : r.status, "Conferido às": r.conferidoEm || "", "Conferido por": r.conferidoPor || "", "Observação": r.obs || "",
+      "Status": STATUS[r.status] ? STATUS[r.status].nome : r.status, "Conferido às": r.conferidoEm || "", "Observação": r.obs || "",
     }));
     const ws = XLSX.utils.json_to_sheet(linhas);
-    ws["!cols"] = [16, 11, 10, 9, 10, 14, 48, 12, 9, 9, 12, 13, 12, 13, 12, 20, 40].map((wch) => ({ wch }));
+    ws["!cols"] = [16, 11, 10, 9, 10, 14, 48, 12, 9, 9, 12, 13, 12, 13, 12, 40].map((wch) => ({ wch }));
     ws["!autofilter"] = { ref: ws["!ref"] };
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Conferência");
@@ -1532,7 +1490,6 @@ document.addEventListener("click", (e) => {
     case "sa-periodo": S.saTodas = b.dataset.todas === "1"; paginaSemAgenda(); break;
     case "abrir-dia": S.date = b.dataset.d; salvarPrefs(); irPara("conferencia"); break;
     case "excluir-dia": excluirDia(b.dataset.d); break;
-    case "trocar-nome": pedirNome(false); break;
     case "reconectar": if (NUVEM) conectarNuvem(); break;
     case "mais-antigas": REDE.tudo = true; escutar(); toast("Carregando as datas mais antigas…", "info"); break;
     case "enviar-antigos": enviarDadosAntigos(); break;
@@ -1543,13 +1500,12 @@ document.addEventListener("change", (e) => {
   if (e.target.id === "diaSel") { S.date = e.target.value; salvarPrefs(); atualizarTudo(); }
   if (e.target.id === "arquivo") { importarArquivos(e.target.files); e.target.value = ""; }
 });
-const nomeObrigatorio = () => !S.nome && $("#nNome");
 document.addEventListener("keydown", (e) => {
-  if (e.key === "Escape" && $("#camada").children.length && !nomeObrigatorio()) fecharCamadas();
+  if (e.key === "Escape" && $("#camada").children.length) fecharCamadas();
 });
 window.addEventListener("hashchange", () => {
   $(".shell").classList.remove("menu-aberto");
-  if (!nomeObrigatorio()) fecharCamadas();
+  fecharCamadas();
   atualizarTudo(); window.scrollTo(0, 0);
 });
 // modo local: outra aba deste navegador alterou os dados
@@ -1573,7 +1529,6 @@ if (!NUVEM) S.records = carregarLocal();
 renderShell();
 atualizarTudo();
 if (NUVEM) conectarNuvem();
-if (!S.nome) pedirNome(true);
 setTimeout(() => ensureXLSX().catch(() => {}), 0);
 
 </script>
