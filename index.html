@@ -170,6 +170,9 @@ main { width: 100%; max-width: 1480px; margin: 0 auto; padding: 22px 28px 48px; 
 /* navegação de dias */
 .dia-nav { display: inline-flex; align-items: center; gap: 2px; background: #fff; border: 1.5px solid var(--line); border-radius: 10px; padding: 2px; }
 .dia-nav .input { border: 0; height: 36px; width: 190px; box-shadow: none; font-weight: 650; color: var(--navy); cursor: pointer; }
+.dia-nav .outra-data { position: relative; display: grid; place-items: center; width: 36px; height: 36px; border-left: 1px solid var(--line-2); color: var(--navy); cursor: pointer; }
+.dia-nav .outra-data input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; border: 0; padding: 0; }
+.dia-nav .outra-data input::-webkit-calendar-picker-indicator { position: absolute; inset: 0; width: 100%; height: 100%; cursor: pointer; }
 
 /* ---------------------------------------------------------------- cartões */
 .card { background: #fff; border-radius: var(--radius); box-shadow: var(--shadow); border: 1px solid var(--line-2); min-width: 0; }
@@ -229,7 +232,6 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; }
 .t tbody tr.st-nao_recebido td { background: #fff5f7; }
 .t tbody tr.st-recebido td:first-child { box-shadow: inset 4px 0 0 var(--green-600); }
 .t tbody tr.st-nao_recebido td:first-child { box-shadow: inset 4px 0 0 var(--red-700); }
-.t tbody tr.novo-h td { border-top: 2px solid var(--navy-200); }
 .t td.forn { white-space: normal; min-width: 180px; max-width: 360px; font-weight: 650; }
 .t td .obs { display: block; font-weight: 400; font-size: 12px; color: var(--muted); }
 .t td .obs.obs-conf { color: var(--amber-800); font-weight: 600; }
@@ -328,7 +330,7 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; }
   .kpi { padding: 14px 16px; }
   .kpi b { font-size: 24px; } .kpi.destaque b { font-size: 28px; }
   .busca-tab { width: 100%; }
-  /* tabela de registros vira cartões: horário, box e editar em cima; fornecedor; números; botões de conferência */
+  /* tabela de registros vira cartões: fornecedor e editar em cima; números; botões de recebimento */
   .t.resp thead { display: none; }
   .t.resp, .t.resp tbody, .t.resp tfoot { display: block; width: 100%; }
   .t.resp tr { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 12px 14px 12px 16px; border-bottom: 1px solid var(--line-2); }
@@ -336,11 +338,9 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; }
   .t.resp tbody tr:nth-child(even) { background: #f8fafc; }
   .t.resp tbody tr.st-recebido { background: #f2faf5; box-shadow: inset 4px 0 0 var(--green-600); }
   .t.resp tbody tr.st-nao_recebido { background: #fff5f7; box-shadow: inset 4px 0 0 var(--red-700); }
-  .t.resp tbody tr.novo-h { border-top: 2px solid var(--navy-200); }
-  .t.resp tbody tr.novo-h td { border-top: 0; }
-  .t.resp .c-data { order: 1; } .t.resp .c-hora { order: 2; } .t.resp .c-box { order: 3; }
-  .t.resp .c-ed { order: 4; margin-left: auto; }
-  .t.resp .c-forn { order: 5; width: 100%; min-width: 0; max-width: none; font-size: 14.5px; }
+  .t.resp .c-data { order: 1; width: 100%; }
+  .t.resp .c-forn { order: 2; flex: 1 1 calc(100% - 52px); min-width: 0; max-width: none; font-size: 14.5px; }
+  .t.resp .c-ed { order: 3; }
   .t.resp .c-num { order: 6; font-size: 12.5px; text-align: left; }
   .t.resp .c-num::before { content: attr(data-l); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-right: 5px; }
   .t.resp .c-conf { order: 7; width: 100%; margin-top: 4px; }
@@ -415,7 +415,7 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; }
   <div id="app"></div>
   <div id="toasts" aria-live="polite"></div>
   <div id="camada"></div>
-  <input type="file" id="arquivo" accept=".xls,.xlsx,.csv" multiple hidden>
+  <input type="file" id="arquivo" accept=".xls,.xlsx,.csv,.json" multiple hidden>
   <div class="veu hidden" id="veu"><div><svg class="i"><use href="#i-upload"/></svg>Solte o relatório para importar</div></div>
 
   <script>
@@ -482,6 +482,7 @@ const DIAS = ["domingo", "segunda-feira", "terça-feira", "quarta-feira", "quint
 const diaSemana = (iso) => { const m = String(iso || "").match(/^(\d{4})-(\d{2})-(\d{2})$/); return m ? DIAS[new Date(+m[1], +m[2] - 1, +m[3]).getDay()] : ""; };
 const fmt = (v, dec = 0) => (v === null || v === undefined || v === "" || isNaN(v)) ? "—" : Number(v).toLocaleString("pt-BR", { minimumFractionDigits: dec, maximumFractionDigits: dec });
 const numToInput = (v) => (v === null || v === undefined || v === "" || isNaN(v)) ? "" : Number(v).toLocaleString("pt-BR", { maximumFractionDigits: 3, useGrouping: false });
+const reaisCurto = (v) => "R$ " + Number(v || 0).toLocaleString("pt-BR", { notation: "compact", maximumFractionDigits: 1 });
 const soma = (arr, k) => arr.reduce((s, r) => s + (Number(r[k]) || 0), 0);
 const plural = (n, um, varios) => `${fmt(n)} ${n === 1 ? um : varios}`;
 
@@ -519,7 +520,7 @@ function toTime(v) {
   return m ? `${pad(m[1])}:${m[2]}` : "";
 }
 const natCmp = (a, b) => String(a || "").localeCompare(String(b || ""), "pt-BR", { numeric: true, sensitivity: "base" });
-const recCmp = (a, b) => natCmp(a.data, b.data) || natCmp(a.horaInicio || "99:99", b.horaInicio || "99:99") || natCmp(a.box, b.box) || natCmp(a.fornecedor, b.fornecedor);
+const recCmp = (a, b) => natCmp(a.data, b.data) || natCmp(a.fornecedor, b.fornecedor) || natCmp(a.notaPedido, b.notaPedido);
 
 /* ---------------------------------------------------------------- preferências deste aparelho */
 const PREFS = { date: null, migrado: false };
@@ -531,26 +532,64 @@ function salvarPrefs() {
   PREFS.date = S.date; delete PREFS.nome; // nome da versão anterior: não é mais usado
   try { localStorage.setItem(PREF_KEY, JSON.stringify(PREFS)); } catch (e) { /* ignora */ }
 }
-const agoraISO = () => new Date().toISOString();
-const limpo = (o) => JSON.parse(JSON.stringify(o)); // tira campos undefined (o Firestore não aceita)
 
 /* =====================================================================
    Dados compartilhados (Firebase / Cloud Firestore, em tempo real)
-     dias/{AAAA-MM-DD} -> { data, itens: { <id>: registro } }
-   Um documento por dia: abrir o app lê só os dias recentes, e cada
-   marcação grava apenas os campos do registro alterado.
+     dias/{AAAA-MM-DD} -> { data, itens: { <id>: registro compacto } }
+   Um documento por dia. Para ocupar o mínimo de espaço, cada registro é
+   gravado com nomes curtos e sem os campos vazios ou com valor padrão
+   (ver CAMPOS). O app acompanha em tempo real os últimos JANELA_DIAS dias
+   e os dias futuros; datas mais antigas são abertas sob demanda.
    Sem o Firebase configurado, os dados ficam só neste navegador.
    ===================================================================== */
 const CFG = window.CONFERENCIA_FIREBASE_CONFIG || {};
 const NUVEM = !!(CFG.apiKey && CFG.projectId) && ![CFG.apiKey, CFG.projectId].some((v) => /^COLE_/.test(String(v)));
 const FB_VER = "10.14.1";
 const FB_URLS = ["app", "firestore"].map((m) => `https://www.gstatic.com/firebasejs/${FB_VER}/firebase-${m}-compat.js`);
-const JANELA_DIAS = 60; // dias acompanhados em tempo real (os mais antigos sob demanda)
+const JANELA_DIAS = 31; // dias passados acompanhados em tempo real (os mais antigos sob demanda)
 const REDE = { estado: NUVEM ? "conectando" : "local", pendente: false, carregado: !NUVEM, tudo: false };
-let db = null, FV = null, pararEscuta = null, ultimoJSON = {};
+let db = null, FV = null, pararEscuta = null, ultimoJSON = {}, recsJanela = [];
+const extras = {}; // dia fora da janela -> { recs, parar } (aberto pela consulta de datas anteriores)
 const addDias = (iso, n) => { const [a, m, d] = iso.split("-").map(Number); const x = new Date(a, m - 1, d + n); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`; };
+const inicioJanela = () => addDias(todayISO(), -JANELA_DIAS);
 const docDia = (d) => db.collection("dias").doc(d);
-const semId = (r) => { const o = Object.assign({}, r); delete o.id; return limpo(o); };
+
+/* ---- formato compacto gravado no Firestore (o mesmo usado pelo backup diário) */
+const CAMPOS = { origem: "t", empresa: "e", fornecedor: "f", notaPedido: "n", peso: "v", volumes: "q", tipoCarga: "c", tipoEntrega: "d", status: "s", conferidoEm: "h", obs: "o" };
+const COD = { status: { recebido: "r", nao_recebido: "n" }, origem: { sem_agenda: "s" } }; // pendente e agenda = campo ausente
+const DECOD = { status: { r: "recebido", n: "nao_recebido" }, origem: { s: "sem_agenda" } };
+const PADRAO = { status: "pendente", origem: "agenda" };
+/** Valor gravado de um campo; null = não gravar (vazio ou padrão). */
+function codValor(campo, v) {
+  if (COD[campo]) return COD[campo][v] || null;
+  if (v === undefined || v === null || v === "" || (typeof v === "number" && isNaN(v))) return null;
+  return v;
+}
+function codificar(rec) {
+  const o = {};
+  Object.entries(CAMPOS).forEach(([k, c]) => { const v = codValor(k, rec[k]); if (v !== null) o[c] = v; });
+  return o;
+}
+/** Registro completo a partir do gravado (aceita também o formato antigo, com nomes longos). */
+function decodificar(id, dia, r) {
+  if (!r || typeof r !== "object") return null;
+  // formato antigo (nomes longos), ou campo longo gravado por um aparelho ainda com a versão anterior aberta
+  const longo = (k) => r[k] !== undefined && r[CAMPOS[k]] === undefined;
+  const antigo = Object.keys(CAMPOS).some(longo);
+  const rec = { id, data: dia, antigo };
+  Object.keys(CAMPOS).forEach((k) => {
+    const v = longo(k) ? r[k] : r[CAMPOS[k]];
+    if (COD[k]) rec[k] = longo(k) ? (v || PADRAO[k]) : (DECOD[k][v] || PADRAO[k]);
+    else if (k === "peso" || k === "volumes") rec[k] = typeof v === "number" ? v : null;
+    else rec[k] = v == null ? "" : String(v);
+  });
+  return rec.fornecedor ? rec : null; // sem fornecedor = resto de um registro excluído
+}
+function registrosDoDoc(dia, dados) {
+  const out = [];
+  Object.entries((dados && dados.itens) || {}).forEach(([id, r]) => { const rec = decodificar(id, (dados && dados.data) || dia, r); if (rec) out.push(rec); });
+  return out;
+}
 
 function carregarScript(src) {
   return new Promise((res, rej) => {
@@ -589,7 +628,7 @@ async function conectarNuvem() {
 function escutar() {
   if (pararEscuta) pararEscuta();
   let q = db.collection("dias");
-  if (!REDE.tudo) q = q.where("data", ">=", addDias(todayISO(), -JANELA_DIAS));
+  if (!REDE.tudo) q = q.where("data", ">=", inicioJanela());
   // Se não houver cache nem resposta do servidor em 10 s, mostra o que tiver (a sincronização continua).
   const espera = setTimeout(() => { if (!REDE.carregado) { REDE.carregado = true; REDE.estado = "offline"; atualizarTudo(); } }, 10000);
   pararEscuta = q.onSnapshot({ includeMetadataChanges: true }, (snap) => {
@@ -598,23 +637,10 @@ function escutar() {
     clearTimeout(espera);
     REDE.estado = fromCache ? "offline" : "online";
     REDE.pendente = snap.metadata.hasPendingWrites;
-    const recs = [], json = {};
-    snap.docs.forEach((d) => {
-      const v = d.data() || {};
-      Object.entries(v.itens || {}).forEach(([id, r]) => {
-        if (!r || !r.origem) return; // ignora restos de registros excluídos
-        const rec = Object.assign({}, r, { id, data: v.data || d.id });
-        recs.push(rec);
-        json[id] = JSON.stringify(rec, Object.keys(rec).sort()); // chaves em ordem: o servidor pode devolvê-las em outra ordem
-      });
-    });
-    const mesmo = REDE.carregado && Object.keys(json).length === Object.keys(ultimoJSON).length && Object.keys(json).every((k) => json[k] === ultimoJSON[k]);
-    ultimoJSON = json;
-    if (mesmo) { renderStatus(); return; } // só mudou o estado da conexão
-    S.records = recs;
-    const primeiraVez = !REDE.carregado;
-    REDE.carregado = true;
-    if (primeiraVez) { atualizarTudo(); avisarDadosAntigos(); } else aoMudarDados();
+    recsJanela = [];
+    snap.docs.forEach((d) => recsJanela.push(...registrosDoDoc(d.id, d.data())));
+    aplicarRegistros();
+    if (!fromCache) compactarAntigos();
   }, (err) => {
     console.error("Erro na sincronização:", err);
     clearTimeout(espera);
@@ -623,6 +649,43 @@ function escutar() {
     atualizarTudo();
     setTimeout(() => { if (REDE.estado === "erro") escutar(); }, 15000);
   });
+}
+
+/** Abre em tempo real um dia fora da janela (consulta de datas anteriores). */
+function abrirDiaAntigo(d) {
+  if (!NUVEM || !db || REDE.tudo || d >= inicioJanela() || extras[d]) return;
+  extras[d] = { recs: [], parar: null };
+  extras[d].parar = docDia(d).onSnapshot((snap) => {
+    extras[d].recs = snap.exists ? registrosDoDoc(d, snap.data()) : [];
+    aplicarRegistros();
+  }, (err) => { console.error("Erro ao abrir data:", err); delete extras[d]; });
+}
+
+/** Junta os registros da janela com os dias abertos sob demanda e atualiza a tela se algo mudou. */
+function aplicarRegistros() {
+  const vistos = new Set(recsJanela.map((r) => r.data));
+  const recs = recsJanela.concat(...Object.entries(extras).filter(([d]) => !vistos.has(d)).map(([, e]) => e.recs));
+  const json = {};
+  recs.forEach((r) => (json[r.id] = JSON.stringify(r, Object.keys(r).sort())));
+  const mesmo = REDE.carregado && Object.keys(json).length === Object.keys(ultimoJSON).length && Object.keys(json).every((k) => json[k] === ultimoJSON[k]);
+  ultimoJSON = json;
+  if (mesmo) { renderStatus(); return; } // só mudou o estado da conexão
+  S.records = recs;
+  const primeiraVez = !REDE.carregado;
+  REDE.carregado = true;
+  if (primeiraVez) { atualizarTudo(); avisarDadosAntigos(); } else aoMudarDados();
+}
+
+/** Regrava no formato compacto os registros que ainda estão no formato antigo (uma vez só). */
+let compactando = false;
+function compactarAntigos() {
+  const antigos = S.records.filter((r) => r.antigo);
+  if (!antigos.length || compactando) return;
+  compactando = true;
+  const b = db.batch(), porDia = {};
+  antigos.forEach((r) => ((porDia[r.data] = porDia[r.data] || {})[`itens.${r.id}`] = codificar(r)));
+  Object.entries(porDia).forEach(([d, upd]) => b.update(docDia(d), upd));
+  b.commit().catch((e) => console.error("Falha ao compactar registros antigos:", e)).finally(() => (compactando = false));
 }
 
 /** Atualiza a tela depois de uma mudança nos dados (deste aparelho ou de outro), sem perder busca nem rolagem. */
@@ -652,29 +715,61 @@ function carregarLocal() {
   catch (e) { return []; }
 }
 function salvarLocal() {
-  try { localStorage.setItem(STORE_KEY, JSON.stringify({ version: 1, records: S.records })); }
+  try { localStorage.setItem(STORE_KEY, JSON.stringify({ version: 2, records: S.records.map((r) => Object.assign({ id: r.id, data: r.data }, codificar(r))) })); }
   catch (e) { toast("Não foi possível salvar os dados neste navegador.", "erro"); }
 }
+function lerLocal() { return carregarLocal().map((r) => decodificar(r.id, r.data, Object.assign({}, r, { id: undefined, data: undefined }))).filter(Boolean); }
 
-/* ---------------------------------------------------------------- operações de gravação */
-/** Separa o que é novo do que já existe: agendas pelo conteúdo (chave), sem agenda pelo id. */
-function separarNovos(existentes, recs) {
-  const cont = {}, ids = new Set();
-  existentes.forEach((r) => { ids.add(r.id); if (r.origem === "agenda" && r.key) cont[r.key] = (cont[r.key] || 0) + 1; });
-  const novos = [];
+/* ---------------------------------------------------------------- importação sem repetir */
+const CAMPOS_RELATORIO = ["empresa", "peso", "volumes", "tipoCarga", "tipoEntrega"];
+/**
+ * Compara o que chegou (relatório ou backup) com o que já existe no dia:
+ *  1. agenda igual (fornecedor, nota, valor e volumes)        -> já existia, nada muda;
+ *  2. mesmo fornecedor e nota, mas valor/volumes diferentes  -> atualiza os valores (status e observação ficam);
+ *  3. o resto                                                  -> agenda nova.
+ * Registro que já existe com o mesmo id (backup) não muda. Do backup, o que falta volta como estava
+ * (sem o passo 2); sem agenda é sempre novo.
+ */
+function planejar(existentes, recs) {
+  const ags = existentes.filter((r) => r.origem === "agenda");
+  const ids = new Set(existentes.map((r) => r.id));
+  const usados = new Set();
+  const novos = [], atualizar = [], sobra = [];
   let repetidas = 0;
-  recs.forEach((r) => {
-    if (r.origem === "agenda" && r.key && cont[r.key]) { cont[r.key]--; repetidas++; return; }
-    if (r.origem !== "agenda" && ids.has(r.id)) { repetidas++; return; }
-    novos.push(r);
+  const achar = (cond) => ags.find((e) => !usados.has(e.id) && cond(e));
+  const restantes = [];
+  recs.forEach((r) => { if (ids.has(r.id)) { usados.add(r.id); repetidas++; } else restantes.push(r); });
+  restantes.forEach((r) => {
+    if (r.origem !== "agenda") { novos.push(r); return; }
+    const m = achar((e) => chave(e) === chave(r));
+    if (m) { usados.add(m.id); repetidas++; } else if (r.restaurado) novos.push(r); else sobra.push(r);
   });
-  return { novos, repetidas };
+  sobra.forEach((r) => {
+    const m = achar((e) => norm(e.fornecedor) === norm(r.fornecedor) && norm(e.notaPedido) === norm(r.notaPedido));
+    if (!m) { novos.push(r); return; }
+    usados.add(m.id);
+    const campos = {};
+    CAMPOS_RELATORIO.forEach((k) => { if (String(r[k] ?? "") !== String(m[k] ?? "")) campos[k] = r[k]; });
+    if (Object.keys(campos).length) atualizar.push({ rec: m, campos }); else repetidas++;
+  });
+  return { novos, atualizar, repetidas };
+}
+
+/** Campos alterados no formato gravado ("itens.<id>.<campo>"), apagando os que ficaram vazios. */
+function camposGravados(id, campos) {
+  const upd = {};
+  Object.entries(campos).forEach(([k, v]) => {
+    if (!CAMPOS[k]) return;
+    const cv = codValor(k, v);
+    upd[`itens.${id}.${CAMPOS[k]}`] = cv === null ? FV.delete() : cv;
+  });
+  return upd;
 }
 
 const BD = {
   criar(rec) {
     if (!NUVEM) { S.records.push(rec); salvarLocal(); aoMudarDados(); return; }
-    docDia(rec.data).set({ data: rec.data, itens: { [rec.id]: semId(rec) } }, { merge: true }).catch(falhaGravacao);
+    docDia(rec.data).set({ data: rec.data, itens: { [rec.id]: codificar(rec) } }, { merge: true }).catch(falhaGravacao);
   },
   /** Grava só os campos informados, para não desfazer o que outra pessoa alterou no mesmo registro. */
   alterar(rec, campos) {
@@ -682,54 +777,60 @@ const BD = {
     if (campos.data && campos.data !== rec.data) { // mudou de dia: move o registro para o documento do outro dia
       const b = db.batch();
       b.update(docDia(rec.data), { [`itens.${rec.id}`]: FV.delete() });
-      b.set(docDia(campos.data), { data: campos.data, itens: { [rec.id]: semId(Object.assign({}, rec, campos)) } }, { merge: true });
+      b.set(docDia(campos.data), { data: campos.data, itens: { [rec.id]: codificar(Object.assign({}, rec, campos)) } }, { merge: true });
       b.commit().catch(falhaGravacao);
       return;
     }
-    const upd = {};
-    Object.entries(limpo(campos)).forEach(([k, v]) => (upd[`itens.${rec.id}.${k}`] = v));
-    docDia(rec.data).update(upd).catch(falhaGravacao);
+    const upd = camposGravados(rec.id, campos);
+    if (Object.keys(upd).length) docDia(rec.data).update(upd).catch(falhaGravacao);
   },
   excluir(rec) {
     if (!NUVEM) { S.records = S.records.filter((x) => x.id !== rec.id); salvarLocal(); aoMudarDados(); return; }
-    docDia(rec.data).update({ [`itens.${rec.id}`]: FV.delete() }).catch(falhaGravacao);
+    // último registro do dia: apaga o documento inteiro (não deixa dia vazio ocupando espaço)
+    const ultimo = !S.records.some((x) => x.data === rec.data && x.id !== rec.id);
+    (ultimo ? docDia(rec.data).delete() : docDia(rec.data).update({ [`itens.${rec.id}`]: FV.delete() })).catch(falhaGravacao);
   },
   excluirDia(d) {
     if (!NUVEM) { S.records = S.records.filter((r) => r.data !== d); salvarLocal(); aoMudarDados(); return; }
     docDia(d).delete().catch(falhaGravacao);
   },
-  /** Inclui vários registros sem duplicar (importação do relatório e envio de dados antigos). */
+  /** Inclui vários registros sem repetir (relatório com vários dias, backup ou dados antigos do navegador). */
   async incluir(recs) {
-    const total = { novas: 0, repetidas: 0, primeira: null };
-    const conta = (novos, repetidas) => {
-      total.novas += novos.length; total.repetidas += repetidas;
-      novos.forEach((r) => { if (!total.primeira || r.data < total.primeira) total.primeira = r.data; });
+    const total = { novas: 0, atualizadas: 0, repetidas: 0, primeira: null, dias: new Set() };
+    const conta = (dia, p) => {
+      total.novas += p.novos.length; total.atualizadas += p.atualizar.length; total.repetidas += p.repetidas;
+      total.dias.add(dia);
+      if ((p.novos.length || p.atualizar.length) && (!total.primeira || dia < total.primeira)) total.primeira = dia;
     };
-    if (!NUVEM) {
-      const { novos, repetidas } = separarNovos(S.records, recs);
-      S.records.push(...novos);
-      salvarLocal();
-      conta(novos, repetidas);
-      return total;
-    }
     const porDia = {};
     recs.forEach((r) => (porDia[r.data] = porDia[r.data] || []).push(r));
     for (const [dia, lista] of Object.entries(porDia)) {
-      // Transação: se duas pessoas importarem o mesmo relatório ao mesmo tempo, nada é duplicado.
-      const res = await db.runTransaction(async (tx) => {
+      if (!NUVEM) {
+        const p = planejar(S.records.filter((r) => r.data === dia), lista);
+        S.records.push(...p.novos);
+        p.atualizar.forEach(({ rec, campos }) => Object.assign(findRec(rec.id), campos));
+        conta(dia, p);
+        continue;
+      }
+      // Transação: se duas pessoas importarem ao mesmo tempo, nada é duplicado.
+      const p = await db.runTransaction(async (tx) => {
         const snap = await tx.get(docDia(dia));
-        const itens = (snap.exists && snap.data().itens) || {};
-        const existentes = Object.entries(itens).filter(([, r]) => r && r.origem).map(([id, r]) => Object.assign({}, r, { id }));
-        const { novos, repetidas } = separarNovos(existentes, lista);
-        if (novos.length) {
-          const add = {};
-          novos.forEach((r) => { add[r.id] = semId(r); });
-          tx.set(docDia(dia), { data: dia, itens: add }, { merge: true });
+        const plano = planejar(snap.exists ? registrosDoDoc(dia, snap.data()) : [], lista);
+        if (plano.novos.length || plano.atualizar.length) {
+          const itens = {};
+          plano.novos.forEach((r) => (itens[r.id] = codificar(r)));
+          plano.atualizar.forEach(({ rec, campos }) => {
+            const parcial = {};
+            Object.entries(camposGravados(rec.id, campos)).forEach(([path, v]) => (parcial[path.split(".")[2]] = v));
+            itens[rec.id] = parcial;
+          });
+          tx.set(docDia(dia), { data: dia, itens }, { merge: true });
         }
-        return { novos, repetidas };
+        return plano;
       });
-      conta(res.novos, res.repetidas);
+      conta(dia, p);
     }
+    if (!NUVEM) salvarLocal();
     return total;
   },
 };
@@ -737,7 +838,7 @@ const BD = {
 /* ---------------------------------------------------------------- dados da versão antiga (só neste navegador) */
 function dadosAntigos() {
   if (!NUVEM || PREFS.migrado) return [];
-  return carregarLocal().filter((r) => r && r.data && r.fornecedor && r.origem);
+  return lerLocal();
 }
 function avisarDadosAntigos() {
   const n = dadosAntigos().length;
@@ -858,11 +959,10 @@ function lerPlanilha(buf) {
       if (!forn) continue; // linhas vazias e "Total Geral"
       let data = toISODate(g("data"));
       if (!data && typeof g("horaInicio") === "number" && g("horaInicio") >= 1) data = excelSerialToISO(g("horaInicio"));
+      // Box, horário e paletes do relatório não são usados (só ajudam a achar o cabeçalho e a data).
       out.push({
-        empresa: String(g("empresa")).trim(), data,
-        horaInicio: toTime(g("horaInicio")), horaFim: toTime(g("horaFim")),
-        box: String(g("box")).trim(), notaPedido: String(g("notaPedido")).trim(), fornecedor: forn,
-        peso: parseNum(g("peso")), volumes: parseNum(g("volumes")), paletes: parseNum(g("paletes")),
+        empresa: String(g("empresa")).trim(), data, notaPedido: String(g("notaPedido")).trim(), fornecedor: forn,
+        peso: parseNum(g("peso")), volumes: parseNum(g("volumes")),
         tipoCarga: String(g("tipoCarga")).trim(), tipoEntrega: String(g("tipoEntrega")).trim(),
       });
     }
@@ -870,18 +970,24 @@ function lerPlanilha(buf) {
   return out;
 }
 
-const chave = (r) => [r.data, r.horaInicio, r.horaFim, norm(r.box), norm(r.fornecedor), norm(r.notaPedido), r.volumes, r.peso].join("|");
+/** Identifica uma agenda pelo conteúdo: o mesmo relatório importado de novo não repete nada. */
+const chave = (r) => [r.data, norm(r.fornecedor), norm(r.notaPedido), r.volumes ?? "", r.peso ?? ""].join("|");
 
-const novaAgenda = (row) => Object.assign({
-  id: uid(), key: chave(row), origem: "agenda", status: "pendente", conferidoEm: "", obs: "",
-  criadoEm: agoraISO(),
-}, row, { data: row.data || S.date || todayISO() });
+const novaAgenda = (row) => Object.assign({ id: uid(), origem: "agenda", status: "pendente", conferidoEm: "", obs: "" }, row, { data: row.data || S.date || todayISO() });
 
-const lerArquivo = (file) => new Promise((res, rej) => {
+/** Backup (.json) gerado pela rotina diária: volta os registros que faltarem, sem repetir. */
+function lerBackup(texto) {
+  const d = JSON.parse(texto);
+  const lista = Array.isArray(d) ? d : (d && Array.isArray(d.registros) ? d.registros : null);
+  if (!lista) throw new Error("backup inválido");
+  return lista.map((r) => decodificar(r.id || uid(), toISODate(r.data), r)).filter((r) => r && r.data).map((r) => Object.assign(r, { restaurado: true, antigo: false }));
+}
+
+const lerArquivo = (file, comoTexto) => new Promise((res, rej) => {
   const reader = new FileReader();
-  reader.onload = (e) => res(new Uint8Array(e.target.result));
+  reader.onload = (e) => res(comoTexto ? e.target.result : new Uint8Array(e.target.result));
   reader.onerror = rej;
-  reader.readAsArrayBuffer(file);
+  if (comoTexto) reader.readAsText(file, "utf-8"); else reader.readAsArrayBuffer(file);
 });
 
 let importando = false;
@@ -893,16 +999,18 @@ function importarArquivos(files) {
   comXLSX("Carregando o leitor de planilhas…", async () => {
     importando = true;
     const erros = [], linhas = [];
+    let backup = false;
     for (const file of lista) {
       try {
+        if (/\.json$/i.test(file.name)) { linhas.push(...lerBackup(await lerArquivo(file, true))); backup = true; continue; }
         const rows = lerPlanilha(await lerArquivo(file));
         if (!rows.length) erros.push(file.name);
-        linhas.push(...rows);
+        linhas.push(...rows.map(novaAgenda));
       } catch (err) { erros.push(file.name); }
     }
     try {
-      if (NUVEM && linhas.length) toast("Importando o relatório…", "info");
-      concluirImportacao(await BD.incluir(linhas.map(novaAgenda)), erros);
+      if (NUVEM && linhas.length) toast(backup ? "Restaurando o backup…" : "Importando o relatório…", "info");
+      concluirImportacao(await BD.incluir(linhas), erros);
     } catch (e) {
       falhaGravacao(e);
     } finally { importando = false; }
@@ -910,18 +1018,26 @@ function importarArquivos(files) {
 }
 
 function concluirImportacao(total, erros) {
-  if (total.primeira) { S.date = total.primeira; salvarPrefs(); }
+  const dias = [...total.dias].sort();
+  // abre o dia de hoje, se veio no relatório; senão, o primeiro dia que mudou
+  const abrir = dias.includes(todayISO()) ? todayISO() : (total.primeira || dias[0]);
+  if (abrir) { S.date = abrir; salvarPrefs(); }
   S.filtro = "todos";
-  if (total.novas) toast(`${plural(total.novas, "agenda importada", "agendas importadas")} para ${isoToBR(total.primeira)}${total.repetidas ? ` · ${total.repetidas} já existia(m)` : ""}.`);
-  else if (total.repetidas) toast(`Este relatório já tinha sido importado (${total.repetidas} agendas).`, "info");
+  const partes = [];
+  if (total.novas) partes.push(plural(total.novas, "agenda nova", "agendas novas"));
+  if (total.atualizadas) partes.push(`${plural(total.atualizadas, "atualizada", "atualizadas")} (valor ou volumes)`);
+  if (total.repetidas) partes.push(`${total.repetidas} já existia(m)`);
+  if (total.novas || total.atualizadas) toast(`${partes.join(" · ")} em ${plural(dias.length, "dia", "dias")}${dias.length > 1 ? ` (${isoToBR(dias[0])} a ${isoToBR(dias[dias.length - 1])})` : ""}.`);
+  else if (total.repetidas) toast(`Nada novo: as ${total.repetidas} agendas já estavam importadas.`, "info");
   if (erros.length) toast(`Nenhuma agenda encontrada em: ${erros.join(", ")}.`, "erro");
-  if (total.novas || total.repetidas) irPara("conferencia"); else atualizarTudo();
+  if (dias.length) irPara("conferencia"); else atualizarTudo();
 }
 
 /* ---------------------------------------------------------------- dados derivados */
 function datas() { return [...new Set(S.records.map((r) => r.data).filter(Boolean))].sort(); }
 function acertarData() {
   const ds = datas();
+  if (S.date && S.date === S.escolhida) return; // data escolhida na consulta: fica, mesmo sem registros
   if (!S.date || (ds.length && !ds.includes(S.date))) {
     const hoje = todayISO();
     S.date = ds.includes(hoje) ? hoje : (ds.length ? ds[ds.length - 1] : hoje);
@@ -934,7 +1050,7 @@ const empresaDia = () => { const e = [...new Set(doDia().map((r) => r.empresa).f
 function busca(q) {
   if (!q) return () => true;
   const termos = q.split(" ");
-  return (r) => { const h = norm([r.fornecedor, r.notaPedido, r.box, r.empresa, r.obs, r.tipoCarga, r.tipoEntrega].join(" ")); return termos.every((t) => h.includes(t)); };
+  return (r) => { const h = norm([r.fornecedor, r.notaPedido, r.empresa, r.obs, r.tipoCarga, r.tipoEntrega].join(" ")); return termos.every((t) => h.includes(t)); };
 }
 function findRec(id) { return S.records.find((r) => r.id === id) || null; }
 
@@ -1039,6 +1155,7 @@ function diaNav() {
       ${opts.map((d) => `<option value="${d}" ${d === S.date ? "selected" : ""}>${isoToBR(d)} · ${diaSemana(d).split("-")[0]}</option>`).join("")}
     </select>
     <button class="btn-icon" data-acao="dia" data-passo="1" aria-label="Próximo dia" ${i < 0 || i >= ds.length - 1 ? "disabled" : ""}>${ic("i-right")}</button>
+    <label class="outra-data" title="Consultar outra data">${ic("i-calendar")}<input type="date" id="diaIr" value="${S.date || ""}" aria-label="Consultar outra data"></label>
   </div>`;
 }
 
@@ -1061,25 +1178,15 @@ function atualizarTudo() {
 function tabela(recs, modo) {
   const comData = modo === "historico";
   if (!recs.length) return "";
-  let ultimoH = null;
   const linhas = recs.map((r) => {
-    const h = `${r.data}|${r.horaInicio}`;
-    const novoH = modo === "agenda" && ultimoH !== null && h !== ultimoH;
-    ultimoH = h;
-    const hora = r.horaInicio
-      ? `<span class="hora">${esc(r.horaInicio)}</span>${r.horaFim ? `<span class="ate">– ${esc(r.horaFim)}</span>` : ""}`
-      : `<span class="vazio">—</span>`;
     const quando = r.status !== "pendente" && r.conferidoEm
       ? `<span class="quando">${r.status === "recebido" ? "Recebido" : "Marcado"} às ${esc(r.conferidoEm)}</span>` : "";
-    return `<tr class="st-${r.status}${novoH ? " novo-h" : ""}" data-id="${r.id}">
+    return `<tr class="st-${r.status}" data-id="${r.id}">
       ${comData ? `<td class="c-data"><b>${isoToBR(r.data)}</b></td>` : ""}
-      <td class="c-hora">${hora}</td>
-      <td class="c-box">${r.box ? `<span class="box-tag">${esc(r.box)}</span>` : `<span class="vazio">—</span>`}</td>
       <td class="forn c-forn">${esc(r.fornecedor)}${(r.tipoCarga || r.tipoEntrega) ? `<span class="obs">${esc([r.tipoCarga, r.tipoEntrega].filter(Boolean).join(" · "))}</span>` : ""}${r.obs ? `<span class="obs obs-conf">${esc(r.obs)}</span>` : ""}</td>
       <td class="c-num" data-l="Nota/Ped.">${r.notaPedido ? esc(r.notaPedido) : `<span class="vazio">—</span>`}</td>
       <td class="din c-num" data-l="R$">${fmt(r.peso, 2)}</td>
       <td class="din c-num" data-l="Vol.">${fmt(r.volumes)}</td>
-      <td class="din c-num" data-l="Pal.">${fmt(r.paletes)}</td>
       <td class="c-conf"><div class="conf">
         <div class="seg seg-sm" role="group" aria-label="Recebimento de ${esc(r.fornecedor)}">
           <button class="ok ${r.status === "recebido" ? "on green" : ""}" data-acao="status" data-st="recebido" aria-pressed="${r.status === "recebido"}">${ic("i-check")}Recebido</button>
@@ -1092,15 +1199,14 @@ function tabela(recs, modo) {
   return `<div class="tabela-box"><table class="t resp">
     <thead><tr>
       ${comData ? "<th>Data</th>" : ""}
-      <th>${modo === "agenda" ? "Horário" : "Chegada"}</th><th>Box</th><th>Fornecedor</th><th>Nota/Pedido</th>
-      <th class="r">Valor (R$)</th><th class="r">Volumes</th><th class="r">Paletes</th><th>Recebimento</th><th></th>
+      <th>Fornecedor</th><th>Nota/Pedido</th>
+      <th class="r">Valor (R$)</th><th class="r">Volumes</th><th>Recebimento</th><th></th>
     </tr></thead>
     <tbody>${linhas}</tbody>
     <tfoot><tr>
-      <td colspan="${comData ? 5 : 4}" class="f-rot">${plural(recs.length, "registro", "registros")}</td>
+      <td colspan="${comData ? 3 : 2}" class="f-rot">${plural(recs.length, "registro", "registros")}</td>
       <td class="din c-num" data-l="R$">${fmt(soma(recs, "peso"), 2)}</td>
       <td class="din c-num" data-l="Vol.">${fmt(soma(recs, "volumes"))}</td>
-      <td class="din c-num" data-l="Pal.">${fmt(soma(recs, "paletes"))}</td>
       <td colspan="2" class="f-vazio"></td>
     </tr></tfoot>
   </table></div>`;
@@ -1144,7 +1250,7 @@ function paginaConferencia() {
         <h2><span class="barra"></span>Agendas do dia</h2>
         <span class="esp"></span>
         <div class="rapidos" id="rapidos"></div>
-        <div class="input-icone busca-tab">${ic("i-search")}<input class="input" id="busca" placeholder="Buscar fornecedor, nota, box…" value="${esc(S.qRaw || "")}"></div>
+        <div class="input-icone busca-tab">${ic("i-search")}<input class="input" id="busca" placeholder="Buscar fornecedor ou nota…" value="${esc(S.qRaw || "")}"></div>
       </div>
       <div id="tabAgenda"></div>
     </section>
@@ -1177,10 +1283,10 @@ function atualizarConferencia() {
       <div class="medidor"><i class="ok" style="width:${pct(ok.length)}%"></i><i class="no" style="width:${pct(no.length)}%"></i></div>
       <span>${fmt(Math.round(pct(ok.length + no.length)))}% do dia · ${fmt(soma(ag, "volumes"))} vol.</span>
     </button>
-    ${kpi("recebido", "k-ok", "Recebidos", "var(--green-600)", ok.length, `${fmt(soma(ok, "volumes"))} vol. · ${fmt(soma(ok, "paletes"))} pal.`)}
-    ${kpi("nao_recebido", "k-no", "Não recebidos", "var(--red-700)", no.length, `${fmt(soma(no, "volumes"))} vol. · ${fmt(soma(no, "paletes"))} pal.`)}
+    ${kpi("recebido", "k-ok", "Recebidos", "var(--green-600)", ok.length, `${fmt(soma(ok, "volumes"))} vol. · ${reaisCurto(soma(ok, "peso"))}`)}
+    ${kpi("nao_recebido", "k-no", "Não recebidos", "var(--red-700)", no.length, `${fmt(soma(no, "volumes"))} vol. · ${reaisCurto(soma(no, "peso"))}`)}
     ${kpi("pendente", "", "Pendentes", "#9aa7b8", pe.length, `${fmt(soma(pe, "volumes"))} vol. aguardando`)}
-    ${kpi("sem_agenda", "k-sa", "Sem agenda", "var(--amber-600)", sa.length, `${fmt(soma(sa, "volumes"))} vol. · ${fmt(soma(sa, "paletes"))} pal.`)}`;
+    ${kpi("sem_agenda", "k-sa", "Sem agenda", "var(--amber-600)", sa.length, `${fmt(soma(sa, "volumes"))} vol. · ${reaisCurto(soma(sa, "peso"))}`)}`;
 
   const filtros = [["todos", "Todas", ag.length], ["pendente", "Pendentes", pe.length], ["recebido", "Recebidas", ok.length], ["nao_recebido", "Não recebidas", no.length]];
   $("#rapidos").innerHTML = filtros.map(([f, n, c]) => `<button class="${S.filtro === f ? "on" : ""}" data-acao="filtro" data-f="${f}">${n} <em>${c}</em></button>`).join("");
@@ -1212,7 +1318,7 @@ function paginaSemAgenda() {
           <button class="${S.saTodas ? "" : "on"}" data-acao="sa-periodo" data-todas="0">Dia ${isoToBR(S.date)}</button>
           <button class="${S.saTodas ? "on" : ""}" data-acao="sa-periodo" data-todas="1">Todas as datas</button>
         </div>
-        <div class="input-icone busca-tab">${ic("i-search")}<input class="input" id="buscaSa" placeholder="Buscar fornecedor, nota, box…" value="${esc(S.qSaRaw || "")}"></div>
+        <div class="input-icone busca-tab">${ic("i-search")}<input class="input" id="buscaSa" placeholder="Buscar fornecedor ou nota…" value="${esc(S.qSaRaw || "")}"></div>
       </div>
       <div class="kpis" id="saKpis" style="--n:4"></div>
       <div id="saTab"></div>
@@ -1228,7 +1334,7 @@ function atualizarSemAgenda() {
     <div><small>Registros</small><b>${fmt(recs.length)}</b></div>
     <div><small>Recebidos</small><b>${fmt(recs.filter((r) => r.status === "recebido").length)}</b></div>
     <div><small>Volumes</small><b>${fmt(soma(recs, "volumes"))}</b></div>
-    <div><small>Paletes</small><b>${fmt(soma(recs, "paletes"))}</b></div>`;
+    <div><small>Valor (R$)</small><b>${fmt(soma(recs, "peso"), 2)}</b></div>`;
   trocarTabela("#saTab", recs.length ? tabela(recs, "historico")
     : vazio("i-truck", "Nenhum recebimento sem agenda", base.length ? "Nenhum registro corresponde à busca." : (S.saTodas ? "Ainda não há registros." : `Não há registros em ${isoToBR(S.date)}.`),
       `<button class="btn btn-red" data-acao="novo-sa">${ic("i-plus")}Recebido sem agenda</button>`));
@@ -1267,7 +1373,7 @@ function paginaImportar() {
         <p>ou escolha o arquivo no computador</p>
         <button class="btn btn-primary btn-lg" data-acao="importar">${ic("i-upload")}Escolher arquivo</button>
       </div>
-      <div class="nota">${ic("i-info")}<div>As agendas entram como <b>pendentes</b> na data do relatório${NUVEM ? " e aparecem na hora para todos os colaboradores" : ""}. Importar o mesmo relatório de novo não duplica nada, e as marcações já feitas são mantidas.</div></div>
+      <div class="nota">${ic("i-info")}<div>O relatório pode trazer <b>vários dias</b>: cada agenda entra como <b>pendente</b> na sua data${NUVEM ? " e aparece na hora para todos os colaboradores" : ""}. Importar de novo não repete nada: agendas iguais são ignoradas, e se o valor ou os volumes mudaram, a agenda é atualizada, mantendo o que já foi marcado. Para restaurar um <b>backup</b>, escolha o arquivo <b>.json</b> da pasta de backup.</div></div>
     </section>
     ${antigos.length ? `<section class="card">
       <div class="card-h"><h2><span class="barra amber"></span>Dados salvos só neste computador</h2></div>
@@ -1307,9 +1413,9 @@ function abrirGaveta(rec) {
   fecharCamadas();
   const novo = !rec;
   const r = rec || {
-    origem: "sem_agenda", data: S.date || todayISO(), horaInicio: nowHM(), horaFim: "",
-    empresa: empresaDia() || maisComum("empresa"), box: "", notaPedido: "", fornecedor: "",
-    peso: null, volumes: null, paletes: null, tipoCarga: "", tipoEntrega: "Sem agenda", status: "recebido", obs: "",
+    origem: "sem_agenda", data: S.date || todayISO(),
+    empresa: empresaDia() || maisComum("empresa"), notaPedido: "", fornecedor: "",
+    peso: null, volumes: null, tipoCarga: "", tipoEntrega: "Sem agenda", status: "recebido", obs: "",
   };
   let status = r.status;
   const segSt = () => `
@@ -1333,10 +1439,7 @@ function abrirGaveta(rec) {
           <div class="card-h"><h2><span class="barra"></span>Agenda</h2></div>
           <div class="card-b grade">
             <div class="field c2"><label for="gData">Data <span class="req">*</span></label><input class="input" type="date" id="gData" value="${esc(r.data)}"></div>
-            <div class="field c2"><label for="gHi">${r.origem === "sem_agenda" ? "Chegada" : "Hora início"}</label><input class="input" type="time" id="gHi" value="${esc(r.horaInicio)}"></div>
-            <div class="field c2"><label for="gHf">Hora fim</label><input class="input" type="time" id="gHf" value="${esc(r.horaFim)}"></div>
             <div class="field c4"><label for="gEmp">Empresa</label><input class="input" id="gEmp" list="dlEmp" value="${esc(r.empresa)}" placeholder="Ex.: 507-CD GRU II"></div>
-            <div class="field c2"><label for="gBox">Box</label><input class="input" id="gBox" list="dlBox" value="${esc(r.box)}" placeholder="Ex.: DOCA 1"></div>
           </div>
         </section>
         <section class="card">
@@ -1345,8 +1448,7 @@ function abrirGaveta(rec) {
             <div class="field c6"><label for="gForn">Fornecedor <span class="req">*</span></label><input class="input" id="gForn" list="dlForn" value="${esc(r.fornecedor)}" placeholder="Razão social do fornecedor"></div>
             <div class="field c2"><label for="gNota">Nota / Pedido</label><input class="input" id="gNota" value="${esc(r.notaPedido)}" placeholder="Nº NF ou pedido"></div>
             <div class="field c2"><label for="gPeso">Valor da nota</label><div class="dinheiro"><span>R$</span><input class="input num" id="gPeso" inputmode="decimal" value="${r.peso == null ? "" : fmt(r.peso, 2)}" placeholder="0,00"></div></div>
-            <div class="field c1"><label for="gVol">Volumes</label><input class="input num" id="gVol" inputmode="numeric" value="${numToInput(r.volumes)}" placeholder="0"></div>
-            <div class="field c1"><label for="gPal">Paletes</label><input class="input num" id="gPal" inputmode="numeric" value="${numToInput(r.paletes)}" placeholder="0"></div>
+            <div class="field c2"><label for="gVol">Volumes</label><input class="input num" id="gVol" inputmode="numeric" value="${numToInput(r.volumes)}" placeholder="0"></div>
             <div class="field c3"><label for="gCarga">Tipo carga</label><input class="input" id="gCarga" list="dlCarga" value="${esc(r.tipoCarga)}" placeholder="Ex.: PALETE"></div>
             <div class="field c3"><label for="gEnt">Tipo entrega</label><input class="input" id="gEnt" list="dlEnt" value="${esc(r.tipoEntrega)}" placeholder="Ex.: Avulso"></div>
           </div>
@@ -1359,7 +1461,6 @@ function abrirGaveta(rec) {
           </div>
         </section>
         <datalist id="dlEmp">${opcoes("empresa")}</datalist>
-        <datalist id="dlBox">${opcoes("box")}</datalist>
         <datalist id="dlForn">${opcoes("fornecedor")}</datalist>
         <datalist id="dlCarga">${opcoes("tipoCarga", ["PALETE", "BATIDA"])}</datalist>
         <datalist id="dlEnt">${opcoes("tipoEntrega", ["Avulso", "Sem agenda"])}</datalist>
@@ -1389,9 +1490,8 @@ function abrirGaveta(rec) {
     $("#gForn").classList.toggle("invalido", !forn);
     if (!data || !forn) { toast("Preencha a data e o fornecedor.", "erro"); (!forn ? $("#gForn") : $("#gData")).focus(); return; }
     const dados = {
-      data, horaInicio: $("#gHi").value, horaFim: $("#gHf").value,
-      empresa: $("#gEmp").value.trim(), box: $("#gBox").value.trim(), notaPedido: $("#gNota").value.trim(), fornecedor: forn,
-      peso: parseNum($("#gPeso").value), volumes: parseNum($("#gVol").value), paletes: parseNum($("#gPal").value),
+      data, empresa: $("#gEmp").value.trim(), notaPedido: $("#gNota").value.trim(), fornecedor: forn,
+      peso: parseNum($("#gPeso").value), volumes: parseNum($("#gVol").value),
       tipoCarga: $("#gCarga").value.trim(), tipoEntrega: $("#gEnt").value.trim(), obs: $("#gObs").value.trim(),
     };
     const conf = status === "pendente" ? { conferidoEm: "" } : { conferidoEm: nowHM() };
@@ -1399,7 +1499,7 @@ function abrirGaveta(rec) {
     salvarPrefs();
     fecharCamadas();
     if (novo) {
-      BD.criar(Object.assign({ id: uid(), origem: "sem_agenda", criadoEm: agoraISO(), status }, conf, dados));
+      BD.criar(Object.assign({ id: uid(), origem: "sem_agenda", status }, conf, dados));
       toast(`${forn} registrado como recebido sem agenda.`);
     } else {
       // grava só o que foi mudado nesta gaveta: alterações feitas ao mesmo tempo em outro aparelho são mantidas
@@ -1407,7 +1507,7 @@ function abrirGaveta(rec) {
       Object.keys(dados).forEach((k) => { if (String(dados[k] ?? "") !== String(rec[k] ?? "")) campos[k] = dados[k]; });
       if (status !== rec.status) Object.assign(campos, { status }, conf);
       if (Object.keys(campos).length) {
-        BD.alterar(rec, Object.assign(campos, { alteradoEm: agoraISO() }));
+        BD.alterar(rec, campos);
         toast("Registro atualizado.");
       }
     }
@@ -1426,6 +1526,13 @@ function abrirGaveta(rec) {
   setTimeout(() => { const el = $(novo ? "#gForn" : "#gObs"); if (el) el.focus(); }, 50);
 }
 
+/** Consulta qualquer data: as dos últimos dias já estão carregadas; as mais antigas são abertas do servidor. */
+function irParaData(d) {
+  S.date = d; S.escolhida = d; salvarPrefs();
+  abrirDiaAntigo(d);
+  if (S.pagina !== "conferencia") irPara("conferencia"); else atualizarTudo();
+}
+
 /* ---------------------------------------------------------------- ações */
 function marcar(id, st) {
   const r = findRec(id);
@@ -1433,7 +1540,7 @@ function marcar(id, st) {
   const campos = r.status === st
     ? { status: "pendente", conferidoEm: "" }
     : { status: st, conferidoEm: nowHM() };
-  BD.alterar(r, Object.assign(campos, { alteradoEm: agoraISO() }));
+  BD.alterar(r, campos);
 }
 
 function exportarExcel() {
@@ -1441,15 +1548,14 @@ function exportarExcel() {
     const recs = doDia().sort((a, b) => (a.origem === b.origem ? 0 : a.origem === "agenda" ? -1 : 1) || recCmp(a, b));
     if (!recs.length) return;
     const linhas = recs.map((r) => ({
-      "Empresa": r.empresa || "", "Data": isoToBR(r.data), "Hora Início": r.horaInicio || "", "Hora Fim": r.horaFim || "",
-      "Box": r.box || "", "Nota/Pedido": r.notaPedido || "", "Fornecedor": r.fornecedor || "",
-      "Valor (R$)": r.peso ?? "", "Volumes": r.volumes ?? "", "Paletes": r.paletes ?? "",
+      "Empresa": r.empresa || "", "Data": isoToBR(r.data), "Nota/Pedido": r.notaPedido || "", "Fornecedor": r.fornecedor || "",
+      "Valor (R$)": r.peso ?? "", "Volumes": r.volumes ?? "",
       "Tipo Carga": r.tipoCarga || "", "Tipo Entrega": r.tipoEntrega || "",
       "Origem": r.origem === "sem_agenda" ? "Sem agenda" : "Agendado",
       "Status": STATUS[r.status] ? STATUS[r.status].nome : r.status, "Marcado às": r.conferidoEm || "", "Observação": r.obs || "",
     }));
     const ws = XLSX.utils.json_to_sheet(linhas);
-    ws["!cols"] = [16, 11, 10, 9, 10, 14, 48, 12, 9, 9, 12, 13, 12, 13, 12, 40].map((wch) => ({ wch }));
+    ws["!cols"] = [16, 11, 14, 48, 13, 9, 12, 13, 12, 13, 12, 40].map((wch) => ({ wch }));
     ws["!autofilter"] = { ref: ws["!ref"] };
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Recebimento");
@@ -1506,6 +1612,7 @@ document.addEventListener("click", (e) => {
 });
 document.addEventListener("change", (e) => {
   if (e.target.id === "diaSel") { S.date = e.target.value; salvarPrefs(); atualizarTudo(); }
+  if (e.target.id === "diaIr" && e.target.value) irParaData(e.target.value);
   if (e.target.id === "arquivo") { importarArquivos(e.target.files); e.target.value = ""; }
 });
 document.addEventListener("keydown", (e) => {
@@ -1517,7 +1624,7 @@ window.addEventListener("hashchange", () => {
   atualizarTudo(); window.scrollTo(0, 0);
 });
 // modo local: outra aba deste navegador alterou os dados
-window.addEventListener("storage", (e) => { if (!NUVEM && e.key === STORE_KEY) { S.records = carregarLocal(); aoMudarDados(); } });
+window.addEventListener("storage", (e) => { if (!NUVEM && e.key === STORE_KEY) { S.records = lerLocal(); aoMudarDados(); } });
 
 /* arrastar e soltar em qualquer lugar da página */
 let arrasto = 0;
@@ -1533,7 +1640,7 @@ window.addEventListener("drop", (e) => {
 
 /* ---------------------------------------------------------------- início */
 carregarPrefs();
-if (!NUVEM) S.records = carregarLocal();
+if (!NUVEM) S.records = lerLocal();
 renderShell();
 atualizarTudo();
 if (NUVEM) conectarNuvem();

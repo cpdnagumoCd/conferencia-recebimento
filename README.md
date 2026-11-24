@@ -39,19 +39,35 @@ Não é preciso ativar o Authentication: o app não tem login nem pede nome; que
 
 ## 3. Uso no dia a dia
 
-- **Quem importa o relatório**: menu **Importar relatório** > arraste o `.xls` do Acrux. As agendas aparecem na hora para todos.
-  Importar o mesmo relatório de novo (ou duas pessoas ao mesmo tempo) não duplica nada.
-- **Quem controla o recebimento**: tela **Recebimento**, botões **Recebido** / **Não recebido** em cada agenda, e **Recebido sem agenda** para cargas sem agendamento.
-- Linhas alteradas por outra pessoa piscam em amarelo por um instante.
+- **Quem importa o relatório**: menu **Importar relatório** > arraste o `.xls` do Acrux. O relatório pode trazer **vários dias**;
+  cada agenda entra na sua data e aparece na hora para todos.
+- **Importar de novo não repete nada**: agendas iguais (fornecedor, nota, valor e volumes) são ignoradas. Se o valor ou os volumes de
+  uma agenda mudaram, ela é atualizada e o que já foi marcado (status, horário, observação) é mantido. Agendas que saíram do
+  relatório não são apagadas.
+- **Quem controla o recebimento**: tela **Recebimento**, botões **Recebido** / **Não recebido** em cada agenda, e
+  **Recebido sem agenda** para cargas sem agendamento.
+- **Dias anteriores**: as setas e a lista de datas mostram os dias com agenda; o ícone de calendário ao lado abre qualquer data,
+  inclusive as antigas.
 - O rodapé do menu mostra a conexão: **Online · tempo real**, **Enviando alterações…** ou **Sem conexão**.
   Sem internet, dá para continuar marcando: as alterações são enviadas quando a conexão voltar.
 - Se duas pessoas alterarem o mesmo registro ao mesmo tempo, cada campo fica com a última alteração recebida
   (uma pessoa mudando o status e outra a observação não se atrapalham).
 
+## 4. Backup diário
+
+- Uma tarefa agendada do Windows (**Backup Recebimento de Notas Fiscais**, todo dia às 18:00) roda `app/backup_diario.py` no computador
+  e salva em `OneDrive - nagumo.com.br\Backup Recebimento de Notas Fiscais`:
+  - `backup_recebimento_AAAA-MM-DD.json`: cópia completa, para restaurar;
+  - `backup_recebimento_AAAA-MM-DD.xlsx`: a mesma cópia em planilha;
+  - `backup.log`: data e resultado de cada backup.
+- Se o computador estiver desligado às 18:00, o backup roda assim que ele for ligado. São guardados os últimos 90 dias.
+- **Restaurar**: menu **Importar relatório** > escolha o `.json` do backup. Volta o que estiver faltando, com as marcações; o que já
+  existe não é repetido nem alterado.
+
 ## Bom saber
 
 - **Segurança**: sem login, quem tem o link consegue ver e alterar os dados. Não divulgue o link fora da equipe.
   As regras só aceitam gravações no formato do app.
-- **Custo**: o plano gratuito do Firebase (Spark) é suficiente. Cada dia é um único documento, e o app acompanha em tempo real só os
-  últimos 60 dias. Datas mais antigas aparecem pelo botão no fim da tela **Importar relatório**.
-- **Backup**: o botão **Exportar Excel** baixa o recebimento do dia em planilha.
+- **Espaço e custo**: o plano gratuito do Firebase (Spark) é suficiente. Cada dia é um único documento, cada agenda é gravada com
+  nomes de campo curtos e sem campos vazios (cerca de 130 bytes por agenda), e box, horário e paletes do relatório não são guardados.
+  O app acompanha em tempo real os últimos 31 dias e os dias futuros; as datas mais antigas são abertas sob demanda.
