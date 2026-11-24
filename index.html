@@ -106,6 +106,7 @@ textarea.input { height: auto; min-height: 88px; padding: 10px 12px; resize: ver
 .seg button.on { background: var(--navy); color: #fff; box-shadow: 0 1px 3px rgba(0, 32, 63, .25); }
 .seg button.on.green { background: var(--green-700); }
 .seg button.on.red { background: var(--red-700); }
+.seg button.on.gray { background: #64748b; }
 .seg button.ok:hover:not(.on) { color: var(--green-700); }
 .seg button.no:hover:not(.on) { color: var(--red-700); }
 .seg-sm button { height: 28px; padding: 0 10px; font-size: 12.5px; gap: 5px; }
@@ -234,7 +235,7 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; }
 .t tbody tr.st-nao_recebido td:first-child { box-shadow: inset 4px 0 0 var(--red-700); }
 .t td.forn { white-space: normal; min-width: 180px; max-width: 360px; font-weight: 650; }
 .t td .obs { display: block; font-weight: 400; font-size: 12px; color: var(--muted); }
-.t td .obs.obs-conf { color: var(--amber-800); font-weight: 600; }
+.t td.c-obs { white-space: normal; min-width: 150px; max-width: 280px; color: var(--amber-800); font-weight: 600; font-size: 13px; line-height: 1.35; overflow-wrap: anywhere; }
 .t td.din { text-align: right; font-variant-numeric: tabular-nums; }
 .t td.vazio, .vazio { color: #a3adbb; }
 .t td .hora { font-weight: 800; color: var(--navy); font-variant-numeric: tabular-nums; }
@@ -343,9 +344,12 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; }
   .t.resp .c-ed { order: 3; }
   .t.resp .c-num { order: 6; font-size: 12.5px; text-align: left; }
   .t.resp .c-num::before { content: attr(data-l); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-right: 5px; }
+  .t.resp .c-obs { order: 6; width: 100%; max-width: none; min-width: 0; font-size: 13px; }
+  .t.resp .c-obs::before { content: attr(data-l); font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin-right: 5px; }
+  .t.resp .c-obs.vazia { display: none; }
   .t.resp .c-conf { order: 7; width: 100%; margin-top: 4px; }
   .t.resp .c-conf .seg { width: 100%; }
-  .t.resp .c-conf .seg button { flex: 1; justify-content: center; height: 36px; font-size: 13.5px; }
+  .t.resp .c-conf .seg button { flex: 1; justify-content: center; height: 36px; font-size: 13px; padding: 0 6px; gap: 4px; }
   .t.resp tfoot tr { background: var(--navy-900); color: #fff; }
   .t.resp tfoot .c-num::before { color: rgba(255, 255, 255, .65); }
   .t.resp tfoot .f-rot { width: 100%; }
@@ -1183,12 +1187,14 @@ function tabela(recs, modo) {
       ? `<span class="quando">${r.status === "recebido" ? "Recebido" : "Marcado"} às ${esc(r.conferidoEm)}</span>` : "";
     return `<tr class="st-${r.status}" data-id="${r.id}">
       ${comData ? `<td class="c-data"><b>${isoToBR(r.data)}</b></td>` : ""}
-      <td class="forn c-forn">${esc(r.fornecedor)}${(r.tipoCarga || r.tipoEntrega) ? `<span class="obs">${esc([r.tipoCarga, r.tipoEntrega].filter(Boolean).join(" · "))}</span>` : ""}${r.obs ? `<span class="obs obs-conf">${esc(r.obs)}</span>` : ""}</td>
+      <td class="forn c-forn">${esc(r.fornecedor)}${(r.tipoCarga || r.tipoEntrega) ? `<span class="obs">${esc([r.tipoCarga, r.tipoEntrega].filter(Boolean).join(" · "))}</span>` : ""}</td>
       <td class="c-num" data-l="Nota/Ped.">${r.notaPedido ? esc(r.notaPedido) : `<span class="vazio">—</span>`}</td>
       <td class="din c-num" data-l="R$">${fmt(r.peso, 2)}</td>
       <td class="din c-num" data-l="Vol.">${fmt(r.volumes)}</td>
+      <td class="c-obs${r.obs ? "" : " vazia"}" data-l="Obs.">${r.obs ? esc(r.obs) : `<span class="vazio">—</span>`}</td>
       <td class="c-conf"><div class="conf">
         <div class="seg seg-sm" role="group" aria-label="Recebimento de ${esc(r.fornecedor)}">
+          <button class="pe ${r.status === "pendente" ? "on gray" : ""}" data-acao="status" data-st="pendente" aria-pressed="${r.status === "pendente"}">${ic("i-clock")}Pendente</button>
           <button class="ok ${r.status === "recebido" ? "on green" : ""}" data-acao="status" data-st="recebido" aria-pressed="${r.status === "recebido"}">${ic("i-check")}Recebido</button>
           <button class="no ${r.status === "nao_recebido" ? "on red" : ""}" data-acao="status" data-st="nao_recebido" aria-pressed="${r.status === "nao_recebido"}">${ic("i-x")}Não recebido</button>
         </div>${quando}
@@ -1200,14 +1206,14 @@ function tabela(recs, modo) {
     <thead><tr>
       ${comData ? "<th>Data</th>" : ""}
       <th>Fornecedor</th><th>Nota/Pedido</th>
-      <th class="r">Valor (R$)</th><th class="r">Volumes</th><th>Recebimento</th><th></th>
+      <th class="r">Valor (R$)</th><th class="r">Volumes</th><th>Observação</th><th>Recebimento</th><th></th>
     </tr></thead>
     <tbody>${linhas}</tbody>
     <tfoot><tr>
       <td colspan="${comData ? 3 : 2}" class="f-rot">${plural(recs.length, "registro", "registros")}</td>
       <td class="din c-num" data-l="R$">${fmt(soma(recs, "peso"), 2)}</td>
       <td class="din c-num" data-l="Vol.">${fmt(soma(recs, "volumes"))}</td>
-      <td colspan="2" class="f-vazio"></td>
+      <td colspan="3" class="f-vazio"></td>
     </tr></tfoot>
   </table></div>`;
 }
@@ -1536,11 +1542,8 @@ function irParaData(d) {
 /* ---------------------------------------------------------------- ações */
 function marcar(id, st) {
   const r = findRec(id);
-  if (!r) return;
-  const campos = r.status === st
-    ? { status: "pendente", conferidoEm: "" }
-    : { status: st, conferidoEm: nowHM() };
-  BD.alterar(r, campos);
+  if (!r || r.status === st) return;
+  BD.alterar(r, st === "pendente" ? { status: st, conferidoEm: "" } : { status: st, conferidoEm: nowHM() });
 }
 
 function exportarExcel() {
