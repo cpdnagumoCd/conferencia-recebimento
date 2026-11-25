@@ -602,7 +602,7 @@ const TIPOS = { pulmao: "Pulmão", norma: "Norma", inversa: "Sel. inversa" };
 const SITUACOES = { concluida: { nome: "Agenda concluída", selo: "s-green" }, nao_concluida: { nome: "Agenda não concluída", selo: "s-red" } };
 
 const S = { records: [], ants: [], date: null, filtro: "todos", q: "", saTodas: false, qSa: "", pagina: "conferencia", gaveta: null,
-  cdAnt: "todos", filtroPrev: "todos", qAnt: "", dash: { ini: null, fim: null, preset: "7", cd: "todos" } };
+  cdAnt: "todos", antTodas: false, antLimite: 300, filtroPrev: "todos", qAnt: "", dash: { ini: null, fim: null, preset: "7", cd: "todos" } };
 
 /* ---------------------------------------------------------------- utilidades */
 const $ = (s, r = document) => r.querySelector(s);
@@ -864,11 +864,6 @@ function abrirDiaAntigo(d) {
     extras[d].recs = snap.exists ? registrosDoDoc(d, snap.data()) : [];
     aplicarRegistros();
   }, (err) => { console.error("Erro ao abrir data:", err); delete extras[d]; });
-  ANT.extras[d] = { recs: [], parar: null };
-  ANT.extras[d].parar = docAnt(d).onSnapshot((snap) => {
-    ANT.extras[d].recs = snap.exists ? registrosDoDocA(d, snap.data()) : [];
-    aplicarAnt();
-  }, (err) => { console.error("Erro ao abrir data (antecipadas):", err); delete ANT.extras[d]; });
 }
 
 /** Período anterior à janela (dashboard): passa a acompanhar todas as datas. */
@@ -883,9 +878,8 @@ const ANT = { janela: [], extras: {}, parar: null, json: {}, carregado: !NUVEM, 
 const docAnt = (d) => db.collection("antecipadas").doc(d);
 function escutarAnt() {
   if (ANT.parar) ANT.parar();
-  let q = db.collection("antecipadas");
-  if (!REDE.tudo) q = q.where("data", ">=", inicioJanela());
-  ANT.parar = q.onSnapshot((snap) => {
+  // todas as datas: o volume é pequeno e a consulta de períodos antigos (planilha de controle) fica completa
+  ANT.parar = db.collection("antecipadas").onSnapshot((snap) => {
     ANT.janela = [];
     snap.docs.forEach((d) => ANT.janela.push(...registrosDoDocA(d.id, d.data())));
     const eraNegado = ANT.negado;
@@ -1874,7 +1868,7 @@ function cabAntecipadas() {
     `${diaSemana(S.date) ? diaSemana(S.date).replace(/^./, (c) => c.toUpperCase()) + ", " : ""}${isoToBR(S.date)} · previsão pela agenda e lançamentos dos CDs`,
     `${datas().length ? diaNav() : ""}
      <button class="btn btn-outline" data-acao="importar-controle">${ic("i-upload")}Importar planilha</button>
-     <button class="btn btn-outline" data-acao="exportar-ant" ${antsDia().length ? "" : "disabled"}>${ic("i-download")}Exportar Excel</button>
+     <button class="btn btn-outline" data-acao="exportar-ant" ${S.ants.length ? "" : "disabled"}>${ic("i-download")}Exportar Excel</button>
      <button class="btn btn-red" data-acao="nova-ant">${ic("i-plus")}Nova antecipação</button>`
   );
 }
@@ -1885,8 +1879,9 @@ function paginaAntecipadas() {
     <section class="kpi-grid kpi-grid-5" id="antKpis"></section>
     <section class="card card-lista">
       <div class="card-h">
-        <h2><span class="barra"></span>Antecipações do dia</h2>
+        <h2><span class="barra"></span><span id="antTit">Antecipações do dia</span></h2>
         <span class="esp"></span>
+        <div class="rapidos" id="antPeriodo"></div>
         <div class="rapidos" id="antCds"></div>
         <div class="input-icone busca-tab">${ic("i-search")}<input class="input" id="buscaAnt" placeholder="Buscar fornecedor ou item…" value="${esc(S.qAntRaw || "")}"></div>
       </div>
@@ -1895,7 +1890,7 @@ function paginaAntecipadas() {
     <div class="duas-col">
       <section class="card card-lista">
         <div class="card-h">
-          <h2><span class="barra amber"></span>Previsão pela agenda</h2>
+          <h2><span class="barra amber"></span>Previsão pela agenda · <span id="prevDia"></span></h2>
           <span class="esp"></span>
           <div class="rapidos" id="prevFiltros"></div>
         </div>
@@ -1913,20 +1908,31 @@ function paginaAntecipadas() {
 function atualizarAntecipadas() {
   if (!$("#antKpis")) return;
   $("#antAviso").innerHTML = ANT.negado ? `<section class="card"><div class="nota nota-alerta">${ic("i-alert")}<div><b>O banco ainda não aceita as cargas antecipadas.</b> Publique as regras novas do Firestore (arquivo <b>firestore.rules</b>) no console do Firebase: Firestore Database &gt; Regras &gt; colar o texto &gt; Publicar.</div></div></section>` : "";
-  const todos = antsDia(), ants = todos.filter(doCd(S.cdAnt));
+  const doDiaAnt = antsDia();
+  const todos = S.antTodas ? S.ants : doDiaAnt, ants = todos.filter(doCd(S.cdAnt));
   const ags = agendasDia();
-  const mapa = vincular(ags, todos);
+  const mapa = vincular(ags, doDiaAnt);
+  const dsAnt = [...new Set(todos.map((r) => r.data))].sort();
   const agAnt = ags.filter((g) => mapa.has(g.id)).length;
   const pct = ags.length ? (agAnt / ags.length) * 100 : 0;
   const cx = ants.filter((r) => unid(r) === "CX"), kg = ants.filter((r) => unid(r) === "KG");
   const semC = ants.filter((r) => contratoDe(r) === "sem").length;
+  $("#antTit").textContent = S.antTodas ? "Todas as antecipações" : "Antecipações do dia";
+  $("#prevDia").textContent = isoToBR(S.date);
+  $("#antPeriodo").innerHTML = `<button class="${S.antTodas ? "" : "on"}" data-acao="ant-periodo" data-todas="0">Dia ${isoToBR(S.date)}</button>
+    <button class="${S.antTodas ? "on" : ""}" data-acao="ant-periodo" data-todas="1">Todas as datas <em>${fmt(S.ants.length)}</em></button>`;
   $("#antKpis").innerHTML = `
-    <div class="card kpi estatico destaque">
+    ${S.antTodas ? `<div class="card kpi estatico destaque">
+      <small>Lançamentos</small>
+      <b>${fmt(ants.length)}</b>
+      <div class="medidor"><i class="ant" style="width:100%"></i></div>
+      <span>${dsAnt.length ? `${isoToBR(dsAnt[0])} a ${isoToBR(dsAnt[dsAnt.length - 1])} · ${plural(dsAnt.length, "dia", "dias")}` : "Nenhum lançamento"}</span>
+    </div>` : `<div class="card kpi estatico destaque">
       <small>Agendas antecipadas</small>
       <b>${agAnt} <em>de ${ags.length}</em></b>
       <div class="medidor"><i class="ant" style="width:${pct}%"></i></div>
       <span>${ags.length ? `${fmt(Math.round(pct))}% das agendas do dia` : "Sem agendas importadas neste dia"}</span>
-    </div>
+    </div>`}
     ${kpiFixo("Cargas antecipadas", "var(--serie-2)", fmt(soma(ants, "antecipadas")), `de ${plural(soma(ants, "cargas"), "carga lançada", "cargas lançadas")}`)}
     ${kpiFixo("Volumes antecipados", "var(--navy-600)", `${fmt(soma(cx, "volAnt"))} <em>CX</em>`, `+ ${fmt(soma(kg, "volAnt"))} KG`)}
     ${kpiFixo("Valor das cargas", "var(--green-600)", reaisCurto(soma(ants, "valor")), plural(ants.length, "lançamento", "lançamentos"))}
@@ -1936,9 +1942,9 @@ function atualizarAntecipadas() {
   $("#antCds").innerHTML = cds.map(([c, n, q]) => `<button class="${S.cdAnt === c ? "on" : ""}" data-acao="cd-ant" data-cd="${c}">${n} <em>${q}</em></button>`).join("");
 
   const busc = S.qAnt ? (r) => S.qAnt.split(" ").every((t) => norm([r.fornecedor, r.item, r.cd, r.obs].join(" ")).includes(t)) : () => true;
-  const mostra = ants.filter(busc).sort((a, b) => natCmp(a.cd, b.cd) || natCmp(a.fornecedor, b.fornecedor));
-  trocarTabela("#tabAnt", mostra.length ? tabelaAnt(mostra)
-    : vazio("i-fast", todos.length ? "Nenhuma antecipação encontrada" : "Nenhuma antecipação neste dia",
+  const mostra = ants.filter(busc).sort((a, b) => natCmp(b.data, a.data) || natCmp(a.cd, b.cd) || natCmp(a.fornecedor, b.fornecedor));
+  trocarTabela("#tabAnt", mostra.length ? tabelaAnt(mostra, S.antTodas, S.antTodas ? S.antLimite : Infinity)
+    : vazio("i-fast", todos.length ? "Nenhuma antecipação encontrada" : S.antTodas ? "Nenhuma antecipação lançada" : "Nenhuma antecipação neste dia",
       todos.length ? "Nenhum lançamento corresponde ao filtro ou à busca." : "Registre pela lista <b>Previsão pela agenda</b>, que já traz fornecedor, valor e volumes, ou use <b>Nova antecipação</b>.",
       todos.length ? "" : `<button class="btn btn-red" data-acao="nova-ant">${ic("i-plus")}Nova antecipação</button>`));
 
@@ -1986,10 +1992,11 @@ function atualizarContratos() {
     : `<p class="contr-nada">${ic("i-x")}<span>Nenhum fornecedor com contrato com esse nome: fica como <b>sem contrato logístico</b>.</span></p>`;
 }
 
-function tabelaAnt(recs) {
+function tabelaAnt(recs, comData, limite = Infinity) {
   const cx = recs.filter((r) => unid(r) === "CX"), kg = recs.filter((r) => unid(r) === "KG");
   const vol = (k) => [cx.length ? `${fmt(soma(cx, k))} CX` : "", kg.length ? `${fmt(soma(kg, k))} KG` : ""].filter(Boolean).join(" · ") || "—";
-  const linhas = recs.map((r) => `<tr data-ant="${r.id}">
+  const linhas = recs.slice(0, limite).map((r) => `<tr data-ant="${r.id}">
+      ${comData ? `<td class="c-data"><b>${isoToBR(r.data)}</b></td>` : ""}
       <td class="c-cd"><span class="selo s-navy">${esc(r.cd || "—")}</span></td>
       <td class="forn c-forn">${esc(r.fornecedor)}${r.item ? `<span class="obs">${esc(r.item)}</span>` : ""}${r.obs ? `<span class="obs obs-a">${esc(r.obs)}</span>` : ""}</td>
       <td class="c-sel">${seloContrato(contratoDe(r))}</td>
@@ -2003,11 +2010,11 @@ function tabelaAnt(recs) {
       <td class="c c-ed"><button class="btn-icon" data-acao="editar-ant" data-ant="${r.id}" title="Editar" aria-label="Editar ${esc(r.fornecedor)}">${ic("i-edit")}</button></td>
     </tr>`).join("");
   return `<div class="tabela-box"><table class="t resp t-ant">
-    <thead><tr><th>CD</th><th>Fornecedor / item</th><th>Contrato</th><th class="r">Vol. prev.</th><th class="r">Vol. antec.</th>
+    <thead><tr>${comData ? "<th>Data</th>" : ""}<th>CD</th><th>Fornecedor / item</th><th>Contrato</th><th class="r">Vol. prev.</th><th class="r">Vol. antec.</th>
       <th class="r">Cargas</th><th class="r">Antecip.</th><th>Tipo</th><th>Situação</th><th class="r">Valor (R$)</th><th></th></tr></thead>
     <tbody>${linhas}</tbody>
     <tfoot><tr>
-      <td colspan="3" class="f-rot">${plural(recs.length, "lançamento", "lançamentos")}</td>
+      <td colspan="${comData ? 4 : 3}" class="f-rot">${plural(recs.length, "lançamento", "lançamentos")}</td>
       <td class="din c-num" data-l="Previstos">${vol("volPrev")}</td>
       <td class="din c-num" data-l="Antecipados">${vol("volAnt")}</td>
       <td class="din c-num" data-l="Cargas">${fmt(soma(recs, "cargas"))}</td>
@@ -2016,7 +2023,7 @@ function tabelaAnt(recs) {
       <td class="din c-num" data-l="R$">${fmt(soma(recs, "valor"), 2)}</td>
       <td class="f-vazio"></td>
     </tr></tfoot>
-  </table></div>`;
+  </table></div>${recs.length > limite ? `<div class="mais-antigas"><button class="btn btn-ghost btn-sm" data-acao="ant-mais">${ic("i-plus")}Mostrar mais (${fmt(Math.min(300, recs.length - limite))} de ${fmt(recs.length - limite)} restantes)</button></div>` : ""}`;
 }
 
 /* ---------------------------------------------------------------- gaveta: lançamento de antecipação */
@@ -2134,8 +2141,9 @@ function abrirGavetaAnt(rec, agenda) {
 
 function exportarAntecipadas() {
   comXLSX("Preparando a planilha…", () => {
-    const recs = antsDia().sort((a, b) => natCmp(a.cd, b.cd) || natCmp(a.fornecedor, b.fornecedor));
-    if (!recs.length) return;
+    const recs = (S.antTodas ? S.ants.slice() : antsDia()).filter(doCd(S.cdAnt))
+      .sort((a, b) => natCmp(a.data, b.data) || natCmp(a.cd, b.cd) || natCmp(a.fornecedor, b.fornecedor));
+    if (!recs.length) { toast("Nenhum lançamento para exportar.", "info"); return; }
     const linhas = recs.map((r) => ({
       "CD": r.cd, "Antecipação": antecipadasDe(r), "Data de Agendamento": isoToBR(r.data), "Razão Social do Fornecedor": r.fornecedor, "Item": r.item,
       "Situação do Contrato": CONTRATOS[contratoDe(r)] ? CONTRATOS[contratoDe(r)].nome.toUpperCase() : "", "Unidade (CX/KG)": unid(r),
@@ -2148,7 +2156,7 @@ function exportarAntecipadas() {
     ws["!autofilter"] = { ref: ws["!ref"] };
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Antecipadas");
-    const nome = `Cargas_Antecipadas_${S.date}.xlsx`;
+    const nome = `Cargas_Antecipadas_${S.antTodas ? "todas" : S.date}.xlsx`;
     XLSX.writeFile(wb, nome);
     toast(`Planilha exportada: ${nome}`);
   });
@@ -2566,7 +2574,9 @@ document.addEventListener("click", (e) => {
     case "nova-ant": abrirGavetaAnt(null, null); break;
     case "editar-ant": abrirGavetaAnt(findAnt(b.dataset.ant), null); break;
     case "registrar-ant": abrirGavetaAnt(null, findRec(b.dataset.ag)); break;
-    case "cd-ant": S.cdAnt = b.dataset.cd; atualizarAntecipadas(); break;
+    case "cd-ant": S.cdAnt = b.dataset.cd; S.antLimite = 300; atualizarAntecipadas(); break;
+    case "ant-periodo": S.antTodas = b.dataset.todas === "1"; S.antLimite = 300; atualizarAntecipadas(); break;
+    case "ant-mais": S.antLimite += 300; atualizarAntecipadas(); break;
     case "filtro-prev": S.filtroPrev = b.dataset.f; atualizarAntecipadas(); break;
     case "dash-preset": definirPeriodo(b.dataset.p); paginaDashboard(); break;
     case "dash-cd": S.dash.cd = b.dataset.cd; salvarPrefs(); atualizarDashboard(); break;
