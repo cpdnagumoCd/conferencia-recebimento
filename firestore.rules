@@ -3,21 +3,39 @@ rules_version = '2';
 // Regras do Recebimento de Notas Fiscais.
 // Cole este conteúdo em: Firebase Console > Firestore Database > Regras > Publicar.
 // Sem login: quem tem o link usa o app.
-// As regras só aceitam o formato do app: um documento por dia, id AAAA-MM-DD, com os registros em "itens".
+// As regras só aceitam o formato do app:
+//   dias/{AAAA-MM-DD}         agendas e recebimentos do dia, registros em "itens"
+//   antecipadas/{AAAA-MM-DD}  cargas antecipadas do dia, registros em "itens"
+//   config/contratos          lista de fornecedores com contrato logístico
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    function diaOk(dia) {
+      return dia.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+          && request.resource.data.keys().hasOnly(['data', 'itens'])
+          && request.resource.data.data == dia
+          && request.resource.data.itens is map
+          && request.resource.data.itens.size() <= 500;
+    }
+
     match /dias/{dia} {
-      function formatoOk() {
-        return dia.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
-            && request.resource.data.keys().hasOnly(['data', 'itens'])
-            && request.resource.data.data == dia
-            && request.resource.data.itens is map
-            && request.resource.data.itens.size() <= 500;
-      }
       allow read: if true;
-      allow create, update: if formatoOk();
+      allow create, update: if diaOk(dia);
       allow delete: if true;
+    }
+
+    match /antecipadas/{dia} {
+      allow read: if true;
+      allow create, update: if diaOk(dia);
+      allow delete: if true;
+    }
+
+    match /config/contratos {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasOnly(['nomes', 'em'])
+                            && request.resource.data.nomes is list
+                            && request.resource.data.nomes.size() <= 20000
+                            && request.resource.data.em is string;
     }
 
     // Qualquer outra coleção fica fechada.

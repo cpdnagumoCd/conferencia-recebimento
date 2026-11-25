@@ -44,8 +44,16 @@ Não é preciso ativar o Authentication: o app não tem login nem pede nome; que
 - **Importar de novo não repete nada**: agendas iguais (fornecedor, nota, valor e volumes) são ignoradas. Se o valor ou os volumes de
   uma agenda mudaram, ela é atualizada e o que já foi marcado (status, horário, observação) é mantido. Agendas que saíram do
   relatório não são apagadas.
-- **Quem controla o recebimento**: tela **Recebimento**, botões **Recebido** / **Não recebido** em cada agenda, e
-  **Recebido sem agenda** para cargas sem agendamento.
+- **Quem controla o recebimento**: tela **Recebimento**, botões **Pendente** (amarelo) / **Recebido** / **Não recebido** em cada agenda, e
+  **Recebido sem agenda** para cargas sem agendamento. Sem nenhum botão marcado, a agenda fica cinza, como **Aguardando entrega**;
+  clicar de novo no botão marcado desmarca.
+- **Cargas antecipadas**: registra as antecipações como na planilha *CONTROLE DE AGENDAMENTO* (CD, fornecedor, item, situação do
+  contrato, unidade, volumes previstos e antecipados, cargas, tipo e situação da carga, valor). A lista **Previsão pela agenda** traz as
+  agendas do dia: **Registrar** já preenche fornecedor, valor e volumes. **Importar planilha** lê a aba *Fornecedores com Contrato*
+  (atualize todo dia) e, se você quiser, os lançamentos das abas *Agendamento CD 1* e *CD 2*, sem repetir.
+  Quem não está na lista conta como **sem contrato logístico**; no lançamento dá para trocar por acordo pontual ou compra por oportunidade.
+- **Dashboard**: cargas agendadas (relatório do Acrux) × cargas antecipadas por dia, com resumos por CD, situação do contrato,
+  tipo e situação da carga, e o recebimento das agendas no período escolhido.
 - **Dias anteriores**: as setas e a lista de datas mostram os dias com agenda; o ícone de calendário ao lado abre qualquer data,
   inclusive as antigas.
 - O rodapé do menu mostra a conexão: **Online · tempo real**, **Enviando alterações…** ou **Sem conexão**.
@@ -57,8 +65,8 @@ Não é preciso ativar o Authentication: o app não tem login nem pede nome; que
 
 - Uma tarefa agendada do Windows (**Backup Recebimento de Notas Fiscais**, todo dia às 18:00) roda `app/backup_diario.py` no computador
   e salva em `OneDrive - nagumo.com.br\Backup Recebimento de Notas Fiscais`:
-  - `backup_recebimento_AAAA-MM-DD.json`: cópia completa, para restaurar;
-  - `backup_recebimento_AAAA-MM-DD.xlsx`: a mesma cópia em planilha;
+  - `backup_recebimento_AAAA-MM-DD.json`: cópia completa (agendas, cargas antecipadas e lista de contratos), para restaurar;
+  - `backup_recebimento_AAAA-MM-DD.xlsx`: a mesma cópia em planilha (abas Recebimento, Antecipadas e Fornecedores com Contrato);
   - `backup.log`: data e resultado de cada backup.
 - Se o computador estiver desligado às 18:00, o backup roda assim que ele for ligado. São guardados os últimos 90 dias.
 - **Restaurar**: menu **Importar relatório** > escolha o `.json` do backup. Volta o que estiver faltando, com as marcações; o que já
