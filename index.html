@@ -502,6 +502,8 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; }
   .t-resumo th, .t-resumo td { padding-left: 8px; padding-right: 8px; }
 }
 
+.cd-fixo { height: 42px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: 9px; background: var(--navy-100); color: var(--navy); font-weight: 800; align-self: flex-start; }
+.grade-resumo > :last-child:nth-child(odd) { grid-column: 1 / -1; }
 
 </style>
 </head>
@@ -590,7 +592,9 @@ const STATUS = {
 };
 
 /* ---- cargas antecipadas (mesmos campos da planilha CONTROLE DE AGENDAMENTO) */
-const CDS = ["CD 1", "CD 2"];
+// Só o CD 2 (o CD 1 saiu a pedido em 25/11/2026). Com um CD só, a escolha de CD não aparece nas telas.
+const CDS = ["CD 2"];
+const VARIOS_CDS = CDS.length > 1;
 const CONTRATOS = {
   com: { nome: "Com contrato logístico", curto: "Com contrato", selo: "s-green" },
   sem: { nome: "Sem contrato logístico", curto: "Sem contrato", selo: "s-red" },
@@ -667,6 +671,7 @@ function carregarPrefs() {
   try { Object.assign(PREFS, JSON.parse(localStorage.getItem(PREF_KEY) || "{}")); } catch (e) { /* sem preferências */ }
   S.date = PREFS.date || null;
   if (PREFS.dash && typeof PREFS.dash === "object") Object.assign(S.dash, PREFS.dash);
+  if (!CDS.includes(S.dash.cd)) S.dash.cd = "todos";
 }
 function salvarPrefs() {
   PREFS.date = S.date; PREFS.dash = S.dash; delete PREFS.nome; // nome da versão anterior: não é mais usado
@@ -1353,7 +1358,7 @@ function lerBackup(texto) {
   const v3 = d && d.versao >= 3;
   const ajusta = (r) => (v3 && r.status === "pendente" ? Object.assign({}, r, { status: undefined, s: "p" }) : r);
   const recs = lista.map((r) => decodificar(r.id || uid(), toISODate(r.data), ajusta(r))).filter((r) => r && r.data).map((r) => Object.assign(r, { restaurado: true, antigo: false }));
-  const ants = (d && Array.isArray(d.antecipadas) ? d.antecipadas : []).map((r) => Object.assign(antDeLongo(r), { restaurado: true })).filter((r) => r.fornecedor && r.data);
+  const ants = (d && Array.isArray(d.antecipadas) ? d.antecipadas : []).map((r) => Object.assign(antDeLongo(r), { restaurado: true })).filter((r) => r.fornecedor && r.data && CDS.includes(r.cd));
   return { recs, ants };
 }
 
@@ -1581,7 +1586,7 @@ function renderSidebar() {
   const ok = ag.filter((r) => r.status === "recebido").length;
   const no = ag.filter((r) => r.status === "nao_recebido").length;
   const sa = semAgendaDia().length;
-  const an = antsDia().length;
+  const an = antsDia().filter(doCd("todos")).length;
   const cont = { conferencia: ag.length ? `${ok + no}/${ag.length}` : "", semagenda: sa ? String(sa) : "", antecipadas: an ? String(an) : "", importar: "" };
   const link = (p) => `<a href="#/${p}" class="${S.pagina === p ? "on" : ""}" ${S.pagina === p ? 'aria-current="page"' : ""}>${ic(PAGINAS[p].ic)}${PAGINAS[p].menu}${cont[p] ? `<span class="cont">${cont[p]}</span>` : ""}</a>`;
   $(".sidebar").innerHTML = `
@@ -1835,7 +1840,7 @@ function atualizarSemAgenda() {
 
 /* ---------------------------------------------------------------- cargas antecipadas: dados derivados */
 const antsDia = () => S.ants.filter((r) => r.data === S.date);
-const doCd = (cd) => (r) => cd === "todos" || r.cd === cd;
+const doCd = (cd) => (r) => CDS.includes(r.cd) && (cd === "todos" || r.cd === cd);
 const unid = (r) => (r.unidade === "KG" ? "KG" : "CX");
 const antecipadasDe = (r) => Number(r.antecipadas) || 0;
 /**
@@ -1866,7 +1871,7 @@ const kpiFixo = (rot, cor, num, sub, cls = "") => `<div class="card kpi estatico
 function cabAntecipadas() {
   cabecalho(
     "Cargas antecipadas",
-    `${diaSemana(S.date) ? diaSemana(S.date).replace(/^./, (c) => c.toUpperCase()) + ", " : ""}${isoToBR(S.date)} · previsão pela agenda e lançamentos dos CDs`,
+    `${diaSemana(S.date) ? diaSemana(S.date).replace(/^./, (c) => c.toUpperCase()) + ", " : ""}${isoToBR(S.date)} · previsão pela agenda e lançamentos do ${CDS.join(" e ")}`,
     `${datas().length ? diaNav() : ""}
      <button class="btn btn-outline" data-acao="importar-controle">${ic("i-upload")}Importar planilha</button>
      <button class="btn btn-outline" data-acao="exportar-ant" ${S.ants.length ? "" : "disabled"}>${ic("i-download")}Exportar Excel</button>
@@ -1910,7 +1915,7 @@ function atualizarAntecipadas() {
   if (!$("#antKpis")) return;
   $("#antAviso").innerHTML = ANT.negado ? `<section class="card"><div class="nota nota-alerta">${ic("i-alert")}<div><b>O banco ainda não aceita as cargas antecipadas.</b> Publique as regras novas do Firestore (arquivo <b>firestore.rules</b>) no console do Firebase: Firestore Database &gt; Regras &gt; colar o texto &gt; Publicar.</div></div></section>` : "";
   const doDiaAnt = antsDia();
-  const todos = S.antTodas ? S.ants : doDiaAnt, ants = todos.filter(doCd(S.cdAnt));
+  const todos = (S.antTodas ? S.ants : doDiaAnt).filter(doCd("todos")), ants = todos.filter(doCd(S.cdAnt));
   const ags = agendasDia();
   const mapa = vincular(ags, doDiaAnt);
   const dsAnt = [...new Set(todos.map((r) => r.data))].sort();
@@ -1940,7 +1945,7 @@ function atualizarAntecipadas() {
     ${kpiFixo("Sem contrato", "var(--red-700)", fmt(semC), CONTR.nomes.length ? `${ants.filter((r) => ["acordo", "oportunidade"].includes(contratoDe(r))).length} acordo / oportunidade` : "Lista não importada", "k-no")}`;
 
   const cds = [["todos", "Todos", todos.length], ...CDS.map((c) => [c, c, todos.filter((r) => r.cd === c).length])];
-  $("#antCds").innerHTML = cds.map(([c, n, q]) => `<button class="${S.cdAnt === c ? "on" : ""}" data-acao="cd-ant" data-cd="${c}">${n} <em>${q}</em></button>`).join("");
+  $("#antCds").innerHTML = !VARIOS_CDS ? "" : cds.map(([c, n, q]) => `<button class="${S.cdAnt === c ? "on" : ""}" data-acao="cd-ant" data-cd="${c}">${n} <em>${q}</em></button>`).join("");
 
   const busc = S.qAnt ? (r) => S.qAnt.split(" ").every((t) => norm([r.fornecedor, r.item, r.cd, r.obs].join(" ")).includes(t)) : () => true;
   const mostra = ants.filter(busc).sort((a, b) => natCmp(b.data, a.data) || natCmp(a.cd, b.cd) || natCmp(a.fornecedor, b.fornecedor));
@@ -1962,7 +1967,7 @@ function atualizarAntecipadas() {
           <td class="c-sel">${seloContrato(contratoAuto(g.fornecedor))}</td>
           <td class="din c-num" data-l="R$">${fmt(g.peso, 2)}</td>
           <td class="din c-num" data-l="Vol.">${fmt(g.volumes)}</td>
-          <td class="c-acao">${a ? `<button class="selo s-green selo-btn" data-acao="editar-ant" data-ant="${a.id}" title="Abrir o lançamento">${ic("i-check")}${esc(a.cd || "Registrada")}${antecipadasDe(a) ? ` · ${antecipadasDe(a)} antec.` : ""}</button>`
+          <td class="c-acao">${a ? `<button class="selo s-green selo-btn" data-acao="editar-ant" data-ant="${a.id}" title="Abrir o lançamento">${ic("i-check")}${VARIOS_CDS ? esc(a.cd || "Registrada") : "Registrada"}${antecipadasDe(a) ? ` · ${antecipadasDe(a)} antec.` : ""}</button>`
             : `<button class="btn btn-outline btn-sm" data-acao="registrar-ant" data-ag="${g.id}">${ic("i-plus")}Registrar</button>`}</td>
         </tr>`;
       }).join("")}</tbody></table></div>`
@@ -1998,7 +2003,7 @@ function tabelaAnt(recs, comData, limite = Infinity) {
   const vol = (k) => [cx.length ? `${fmt(soma(cx, k))} CX` : "", kg.length ? `${fmt(soma(kg, k))} KG` : ""].filter(Boolean).join(" · ") || "—";
   const linhas = recs.slice(0, limite).map((r) => `<tr data-ant="${r.id}">
       ${comData ? `<td class="c-data"><b>${isoToBR(r.data)}</b></td>` : ""}
-      <td class="c-cd"><span class="selo s-navy">${esc(r.cd || "—")}</span></td>
+      ${VARIOS_CDS ? `<td class="c-cd"><span class="selo s-navy">${esc(r.cd || "—")}</span></td>` : ""}
       <td class="forn c-forn">${esc(r.fornecedor)}${r.item ? `<span class="obs">${esc(r.item)}</span>` : ""}${r.obs ? `<span class="obs obs-a">${esc(r.obs)}</span>` : ""}</td>
       <td class="c-sel">${seloContrato(contratoDe(r))}</td>
       <td class="din c-num" data-l="Previstos">${fmt(r.volPrev)} <small class="un">${unid(r)}</small></td>
@@ -2011,11 +2016,11 @@ function tabelaAnt(recs, comData, limite = Infinity) {
       <td class="c c-ed"><button class="btn-icon" data-acao="editar-ant" data-ant="${r.id}" title="Editar" aria-label="Editar ${esc(r.fornecedor)}">${ic("i-edit")}</button></td>
     </tr>`).join("");
   return `<div class="tabela-box"><table class="t resp t-ant">
-    <thead><tr>${comData ? "<th>Data</th>" : ""}<th>CD</th><th>Fornecedor / item</th><th>Contrato</th><th class="r">Vol. prev.</th><th class="r">Vol. antec.</th>
+    <thead><tr>${comData ? "<th>Data</th>" : ""}${VARIOS_CDS ? "<th>CD</th>" : ""}<th>Fornecedor / item</th><th>Contrato</th><th class="r">Vol. prev.</th><th class="r">Vol. antec.</th>
       <th class="r">Cargas</th><th class="r">Antecip.</th><th>Tipo</th><th>Situação</th><th class="r">Valor (R$)</th><th></th></tr></thead>
     <tbody>${linhas}</tbody>
     <tfoot><tr>
-      <td colspan="${comData ? 4 : 3}" class="f-rot">${plural(recs.length, "lançamento", "lançamentos")}</td>
+      <td colspan="${(comData ? 3 : 2) + (VARIOS_CDS ? 1 : 0)}" class="f-rot">${plural(recs.length, "lançamento", "lançamentos")}</td>
       <td class="din c-num" data-l="Previstos">${vol("volPrev")}</td>
       <td class="din c-num" data-l="Antecipados">${vol("volAnt")}</td>
       <td class="din c-num" data-l="Cargas">${fmt(soma(recs, "cargas"))}</td>
@@ -2033,12 +2038,12 @@ function abrirGavetaAnt(rec, agenda) {
   const novo = !rec;
   const ultimoCd = CDS.includes(PREFS.cdAnt) ? PREFS.cdAnt : CDS[0];
   const r = rec || {
-    data: (agenda && agenda.data) || S.date || todayISO(), cd: S.cdAnt !== "todos" ? S.cdAnt : ultimoCd,
+    data: (agenda && agenda.data) || S.date || todayISO(), cd: CDS.includes(S.cdAnt) ? S.cdAnt : ultimoCd,
     fornecedor: agenda ? agenda.fornecedor : "", item: "", contrato: "auto", unidade: "CX",
     volPrev: agenda ? agenda.volumes : null, volAnt: agenda ? agenda.volumes : null, cargas: 1, antecipadas: 1,
     tipo: "", situacao: "", valor: agenda ? agenda.peso : null, obs: "", agenda: agenda ? agenda.id : "",
   };
-  const est = { cd: r.cd || ultimoCd, unidade: r.unidade || "CX", tipo: r.tipo || "", situacao: r.situacao || "" };
+  const est = { cd: CDS.includes(r.cd) ? r.cd : ultimoCd, unidade: r.unidade || "CX", tipo: r.tipo || "", situacao: r.situacao || "" };
   const seg = (campo, opcoes) => opcoes.map(([v, n]) => `<button type="button" data-v="${v}" class="${est[campo] === v ? "on" : ""}">${n}</button>`).join("");
   const segs = {
     cd: () => seg("cd", CDS.map((c) => [c, c])),
@@ -2062,7 +2067,7 @@ function abrirGavetaAnt(rec, agenda) {
           <div class="card-h"><h2><span class="barra"></span>Agendamento</h2></div>
           <div class="card-b grade">
             <div class="field c2"><label for="aData">Data de agendamento <span class="req">*</span></label><input class="input" type="date" id="aData" value="${esc(r.data)}"></div>
-            <div class="field c4"><span class="rotulo">CD <span class="req">*</span></span><div class="seg" data-seg="cd">${segs.cd()}</div></div>
+            ${VARIOS_CDS ? `<div class="field c4"><span class="rotulo">CD <span class="req">*</span></span><div class="seg" data-seg="cd">${segs.cd()}</div></div>` : `<div class="field c4"><span class="rotulo">CD</span><div class="cd-fixo">${esc(CDS[0])}</div></div>`}
             <div class="field c6"><label for="aForn">Razão social do fornecedor <span class="req">*</span></label><input class="input" id="aForn" list="dlFornA" value="${esc(r.fornecedor)}" placeholder="Fornecedor"></div>
             <div class="field c3"><label for="aItem">Item</label><input class="input" id="aItem" value="${esc(r.item)}" placeholder="Ex.: Bala Fini, Ovomaltine"></div>
             <div class="field c3"><label for="aContr">Situação do contrato</label><select class="input" id="aContr">${opcoesContrato(r.fornecedor, r.contrato)}</select></div>
@@ -2146,17 +2151,17 @@ function exportarAntecipadas() {
       .sort((a, b) => natCmp(a.data, b.data) || natCmp(a.cd, b.cd) || natCmp(a.fornecedor, b.fornecedor));
     if (!recs.length) { toast("Nenhum lançamento para exportar.", "info"); return; }
     const linhas = recs.map((r) => ({
-      "CD": r.cd, "Antecipação": antecipadasDe(r), "Data de Agendamento": isoToBR(r.data), "Razão Social do Fornecedor": r.fornecedor, "Item": r.item,
+      "Antecipação": antecipadasDe(r), "Data de Agendamento": isoToBR(r.data), "Razão Social do Fornecedor": r.fornecedor, "Item": r.item,
       "Situação do Contrato": CONTRATOS[contratoDe(r)] ? CONTRATOS[contratoDe(r)].nome.toUpperCase() : "", "Unidade (CX/KG)": unid(r),
       "Qtd. Volumes Previstos": r.volPrev ?? "", "Qtd. Volumes Antecipados": r.volAnt ?? "", "Quantidade de Cargas": r.cargas ?? "",
       "Tipo de Carga": (TIPOS[r.tipo] || "").toUpperCase(), "Situação da carga": SITUACOES[r.situacao] ? SITUACOES[r.situacao].nome.toUpperCase() : "",
       "Valor Total da Carga (R$)": r.valor ?? "", "Observação": r.obs,
     }));
     const ws = XLSX.utils.json_to_sheet(linhas);
-    ws["!cols"] = [7, 12, 14, 44, 24, 24, 10, 12, 12, 10, 13, 22, 16, 36].map((wch) => ({ wch }));
+    ws["!cols"] = [12, 14, 44, 24, 24, 10, 12, 12, 10, 13, 22, 16, 36].map((wch) => ({ wch }));
     ws["!autofilter"] = { ref: ws["!ref"] };
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Antecipadas");
+    XLSX.utils.book_append_sheet(wb, ws, `Agendamento ${CDS.join(" e ")}`);
     const nome = `Cargas_Antecipadas_${S.antTodas ? "todas" : S.date}.xlsx`;
     XLSX.writeFile(wb, nome);
     toast(`Planilha exportada: ${nome}`);
@@ -2225,8 +2230,8 @@ function atualizarDashboard() {
 
   el.innerHTML = `
     <div class="dash-filtro">
-      <span class="rotulo">CD das antecipações</span>
-      <div class="rapidos">${[["todos", "Todos"], ...CDS.map((c) => [c, c])].map(([c, n]) => `<button class="${cd === c ? "on" : ""}" data-acao="dash-cd" data-cd="${c}">${n}</button>`).join("")}</div>
+      ${VARIOS_CDS ? `<span class="rotulo">CD das antecipações</span>
+      <div class="rapidos">${[["todos", "Todos"], ...CDS.map((c) => [c, c])].map(([c, n]) => `<button class="${cd === c ? "on" : ""}" data-acao="dash-cd" data-cd="${c}">${n}</button>`).join("")}</div>` : `<span class="selo s-navy">Antecipações do ${esc(CDS[0])}</span>`}
       <span class="dica">As cargas agendadas vêm do relatório do Acrux importado na tela Recebimento.</span>
     </div>
     <section class="kpi-grid kpi-grid-5">
@@ -2250,7 +2255,7 @@ function atualizarDashboard() {
       ${grafico(porDia)}
     </section>
     <div class="grade-resumo">
-      ${grupo("Por CD", CDS, (c) => c, (r) => r.cd)}
+      ${VARIOS_CDS ? grupo("Por CD", CDS, (c) => c, (r) => r.cd) : ""}
       ${grupo("Por situação do contrato", Object.keys(CONTRATOS), (c) => seloContrato(c, true), contratoDe)}
       ${grupo("Por tipo de carga", Object.keys(TIPOS).concat([""]), (c) => TIPOS[c] || "Não informado", (r) => r.tipo || "")}
       ${grupo("Por situação da carga", Object.keys(SITUACOES).concat([""]), (c) => (SITUACOES[c] ? seloSituacao(c) : "Não informada"), (r) => r.situacao || "")}
