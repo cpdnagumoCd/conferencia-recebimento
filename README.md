@@ -83,6 +83,21 @@ Não é preciso ativar o Authentication: o app não tem login nem pede nome; que
 
 - **Segurança**: sem login, quem tem o link consegue ver e alterar os dados. Não divulgue o link fora da equipe.
   As regras só aceitam gravações no formato do app.
-- **Espaço e custo**: o plano gratuito do Firebase (Spark) é suficiente. Cada dia é um único documento, cada agenda é gravada com
-  nomes de campo curtos e sem campos vazios (cerca de 130 bytes por agenda), e box, horário e paletes do relatório não são guardados.
-  O app acompanha em tempo real os últimos 31 dias e os dias futuros; as datas mais antigas são abertas sob demanda.
+## Plano de consumo do banco (Firebase gratuito)
+
+Limites do plano gratuito (Spark), por dia: 50 mil leituras, 20 mil gravações, 20 mil exclusões; espaço total de 1 GB.
+
+| Item | Como está | Por quê |
+|---|---|---|
+| **Espaço** | ~0,4 MB em 26/11/2026 (1.446 agendas, contratos 59 KB, ruptura 166 KB); cresce ~6 KB por dia de agenda | Um documento por dia, campos com nomes curtos e sem campos vazios (~130 bytes por agenda); box, horário e paletes não são guardados. Nesse ritmo, 1 GB levaria décadas: não é preciso apagar dados antigos. |
+| **Leituras ao abrir o app** | ~33 (dias dos últimos 7 dias + futuros, antecipações do mesmo período, contratos e ruptura) | O app acompanha em tempo real só os **últimos 7 dias e os futuros**. Data antiga aberta pelo calendário = 1 leitura; o dashboard carrega só o período escolhido. |
+| **Leituras com o app aberto** | 1 por aparelho conectado a cada alteração no dia | Só o documento do dia alterado é reenviado; a mesma leitura serve para todos os registros daquele dia. |
+| **Gravações** | 1 por marcação/edição | Grava só o campo alterado; importação grava 1 documento por dia do relatório; o fechamento automático dos dias anteriores grava 1 vez por dia. |
+| **Listas de contratos e ruptura** | 1 documento cada, trocado inteiro na atualização diária | Uma leitura por aparelho a cada atualização. |
+| **Backup diário** | lê todos os documentos 1 vez por dia (~60 leituras hoje) | Guarda tudo no OneDrive; restaura sem repetir. |
+
+Estimativa com 15 pessoas abrindo o app 4 vezes por dia e ~400 marcações: cerca de 2 mil leituras ao abrir + 6 mil com o app
+aberto = **~8 mil leituras por dia (16% do limite)** e ~500 gravações (2,5%).
+
+Para acompanhar: Firebase Console > Firestore Database > **Uso**. Se um dia passar de 70% das leituras, diminua `JANELA_DIAS`
+em `app/static/app.js` (hoje 7) ou peça para revisar.

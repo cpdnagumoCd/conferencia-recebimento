@@ -732,12 +732,17 @@ const CFG = window.CONFERENCIA_FIREBASE_CONFIG || {};
 const NUVEM = !!(CFG.apiKey && CFG.projectId) && ![CFG.apiKey, CFG.projectId].some((v) => /^COLE_/.test(String(v)));
 const FB_VER = "10.14.1";
 const FB_URLS = ["app", "firestore"].map((m) => `https://www.gstatic.com/firebasejs/${FB_VER}/firebase-${m}-compat.js`);
-const JANELA_DIAS = 31; // dias passados acompanhados em tempo real (os mais antigos sob demanda)
-const REDE = { estado: NUVEM ? "conectando" : "local", pendente: false, carregado: !NUVEM, tudo: false };
+// Leituras são o que mais consome no plano gratuito: cada documento de dia lido ao abrir o app conta 1 leitura.
+// Por isso o app acompanha só os últimos JANELA_DIAS dias e os futuros; períodos anteriores são abertos sob demanda.
+const JANELA_DIAS = 7;
+const DIAS_FECHAMENTO = 31; // agendas de dias anteriores (até 31 dias atrás) sem marcação viram "não recebido"
+const REDE = { estado: NUVEM ? "conectando" : "local", pendente: false, carregado: !NUVEM, desde: null };
 let db = null, FV = null, pararEscuta = null, ultimoJSON = {}, recsJanela = [];
 const extras = {}; // dia fora da janela -> { recs, parar } (aberto pela consulta de datas anteriores)
 const addDias = (iso, n) => { const [a, m, d] = iso.split("-").map(Number); const x = new Date(a, m - 1, d + n); return `${x.getFullYear()}-${pad(x.getMonth() + 1)}-${pad(x.getDate())}`; };
-const inicioJanela = () => addDias(todayISO(), -JANELA_DIAS);
+// REDE.desde: null = janela padrão; "AAAA-MM-DD" = a partir dessa data (período do dashboard); "" = todas as datas
+const inicioJanela = () => (REDE.desde !== null && REDE.desde !== undefined ? REDE.desde : addDias(todayISO(), -JANELA_DIAS));
+const todasAsDatas = () => REDE.desde === "";
 const docDia = (d) => db.collection("dias").doc(d);
 
 /* ---- formato compacto gravado no Firestore (o mesmo usado pelo backup diário) */
@@ -913,7 +918,7 @@ function escutar() {
   escutarContratos();
   escutarRuptura();
   let q = db.collection("dias");
-  if (!REDE.tudo) q = q.where("data", ">=", inicioJanela());
+  if (!todasAsDatas()) q = q.where("data", ">=", inicioJanela());
   // Se não houver cache nem resposta do servidor em 10 s, mostra o que tiver (a sincronização continua).
   const espera = setTimeout(() => { if (!REDE.carregado) { REDE.carregado = true; REDE.estado = "offline"; atualizarTudo(); } }, 10000);
   pararEscuta = q.onSnapshot({ includeMetadataChanges: true }, (snap) => {
@@ -938,19 +943,24 @@ function escutar() {
 
 /** Abre em tempo real um dia fora da janela (consulta de datas anteriores). */
 function abrirDiaAntigo(d) {
-  if (!NUVEM || !db || REDE.tudo || d >= inicioJanela() || extras[d]) return;
+  if (!NUVEM || !db || todasAsDatas() || d >= inicioJanela() || extras[d]) return;
   extras[d] = { recs: [], parar: null };
   extras[d].parar = docDia(d).onSnapshot((snap) => {
     extras[d].recs = snap.exists ? registrosDoDoc(d, snap.data()) : [];
     aplicarRegistros();
   }, (err) => { console.error("Erro ao abrir data:", err); delete extras[d]; });
+  ANT.extras[d] = { recs: [], parar: null };
+  ANT.extras[d].parar = docAnt(d).onSnapshot((snap) => {
+    ANT.extras[d].recs = snap.exists ? registrosDoDocA(d, snap.data()) : [];
+    aplicarAnt();
+  }, (err) => { console.error("Erro ao abrir data (antecipadas):", err); delete ANT.extras[d]; });
 }
 
-/** Período anterior à janela (dashboard): passa a acompanhar todas as datas. */
-function carregarTudo() {
-  if (!NUVEM || !db || REDE.tudo) return;
-  REDE.tudo = true; escutar();
-  toast("Carregando as datas mais antigas…", "info");
+/** Período anterior à janela (dashboard): passa a acompanhar a partir dessa data (só o necessário). */
+function carregarDesde(ini) {
+  if (!NUVEM || !db || todasAsDatas() || !ini || ini >= inicioJanela()) return;
+  REDE.desde = ini; escutar();
+  toast(`Carregando os dados desde ${isoToBR(ini)}…`, "info");
 }
 
 /* ---- cargas antecipadas em tempo real (mesma janela de datas das agendas) */
@@ -958,8 +968,10 @@ const ANT = { janela: [], extras: {}, parar: null, json: {}, carregado: !NUVEM, 
 const docAnt = (d) => db.collection("antecipadas").doc(d);
 function escutarAnt() {
   if (ANT.parar) ANT.parar();
-  // todas as datas: o volume é pequeno e a consulta de períodos antigos (planilha de controle) fica completa
-  ANT.parar = db.collection("antecipadas").onSnapshot((snap) => {
+  // mesma janela das agendas (datas anteriores sob demanda)
+  let q = db.collection("antecipadas");
+  if (!todasAsDatas()) q = q.where("data", ">=", inicioJanela());
+  ANT.parar = q.onSnapshot((snap) => {
     ANT.janela = [];
     snap.docs.forEach((d) => ANT.janela.push(...registrosDoDocA(d.id, d.data())));
     const eraNegado = ANT.negado;
@@ -1028,12 +1040,12 @@ function aplicarRegistros() {
 
 /**
  * Agendas de dias anteriores que ficaram em "Aguardando entrega" (sem Pendente, Recebido nem Não recebido)
- * passam sozinhas para "Não recebido". Vale para os dias acompanhados em tempo real (últimos JANELA_DIAS dias).
+ * passam sozinhas para "Não recebido". Vale para os últimos DIAS_FECHAMENTO dias (as datas antigas ficam como estão).
  */
 let fechando = false;
 function fecharDiasAnteriores() {
   if (fechando || importando || !REDE.carregado || (NUVEM && (!db || REDE.estado !== "online"))) return;
-  const hoje = todayISO(), ini = inicioJanela();
+  const hoje = todayISO(), ini = addDias(hoje, -DIAS_FECHAMENTO);
   const recs = S.records.filter((r) => r.status === "aguardando" && r.data < hoje && r.data >= ini);
   if (!recs.length) return;
   const aviso = () => toast(`${plural(recs.length, "agenda", "agendas")} de dias anteriores sem marcação ${recs.length === 1 ? "passou" : "passaram"} para Não recebido.`, "info");
@@ -2448,7 +2460,7 @@ function diasDoPeriodo(ini, fim) {
 }
 function paginaDashboard() {
   if (!S.dash.ini || !S.dash.fim || S.dash.preset) definirPeriodo(S.dash.preset || "7"); // "hoje", "7 dias"… acompanham a data de hoje
-  if (S.dash.ini < inicioJanela()) carregarTudo();
+  if (S.dash.ini < inicioJanela()) carregarDesde(S.dash.ini);
   const presets = [["hoje", "Hoje"], ["7", "7 dias"], ["30", "30 dias"], ["mes", "Este mês"]];
   cabecalho(
     "Dashboard",
@@ -2637,7 +2649,7 @@ function paginaImportar() {
         <thead><tr><th>Data</th><th>Empresa</th><th class="r">Agendas</th><th class="r">Recebidas</th><th class="r">Não recebidas</th><th class="r">Pendentes</th><th class="r">Aguardando</th><th class="r">Sem agenda</th><th></th></tr></thead>
         <tbody>${linhas}</tbody></table></div>`
       : vazio("i-calendar", "Nenhuma data importada", "Os relatórios importados aparecem aqui.")}
-      ${NUVEM && !REDE.tudo ? `<div class="mais-antigas"><button class="btn btn-ghost btn-sm" data-acao="mais-antigas">${ic("i-clock")}Mostrar também as datas com mais de ${JANELA_DIAS} dias</button></div>` : ""}
+      ${NUVEM && !todasAsDatas() ? `<div class="mais-antigas"><button class="btn btn-ghost btn-sm" data-acao="mais-antigas">${ic("i-clock")}Mostrar também as datas com mais de ${JANELA_DIAS} dias</button></div>` : ""}
     </section>`;
   const dz = $("#dropzone");
   dz.addEventListener("dragover", (e) => { e.preventDefault(); dz.classList.add("sobre"); });
@@ -2868,7 +2880,7 @@ document.addEventListener("click", (e) => {
     case "abrir-dia": S.date = b.dataset.d; salvarPrefs(); irPara("conferencia"); break;
     case "excluir-dia": excluirDia(b.dataset.d); break;
     case "reconectar": if (NUVEM) conectarNuvem(); break;
-    case "mais-antigas": REDE.tudo = true; escutar(); toast("Carregando as datas mais antigas…", "info"); break;
+    case "mais-antigas": REDE.desde = ""; escutar(); toast("Carregando as datas mais antigas…", "info"); break;
     case "enviar-antigos": enviarDadosAntigos(); break;
     case "descartar-antigos": descartarDadosAntigos(); break;
   }
