@@ -1992,7 +1992,7 @@ function paginaConferencia() {
   }
 
   $("#main").innerHTML = `
-    <section class="kpi-grid" id="kpis"></section>
+    <section class="kpi-grid kpi-grid-5" id="kpis"></section>
     <section class="card card-lista">
       <div class="card-h">
         <h2><span class="barra"></span>Agendas do dia</h2>
@@ -2001,14 +2001,6 @@ function paginaConferencia() {
         <div class="input-icone busca-tab">${ic("i-search")}<input class="input" id="busca" placeholder="Buscar fornecedor ou nota…" value="${esc(S.qRaw || "")}"></div>
       </div>
       <div id="tabAgenda"></div>
-    </section>
-    <section class="card card-lista" id="cardSa">
-      <div class="card-h">
-        <h2><span class="barra amber"></span>Recebidos sem agenda</h2>
-        <span class="esp"></span>
-        <button class="btn btn-outline btn-sm" data-acao="novo-sa">${ic("i-plus")}Adicionar</button>
-      </div>
-      <div id="tabSa"></div>
     </section>`;
   $("#busca").addEventListener("input", (e) => { S.qRaw = e.target.value; S.q = norm(e.target.value); atualizarConferencia(); });
   atualizarConferencia();
@@ -2018,7 +2010,6 @@ function atualizarConferencia() {
   if (!$("#kpis")) return;
   const ag = agendasDia();
   MAPA_ANT = vincular(ag, antsDia().filter(doCd("todos")));
-  const sa = semAgendaDia();
   const por = (st) => ag.filter((r) => r.status === st);
   const ok = por("recebido"), no = por("nao_recebido"), pe = por("pendente"), ag2 = por("aguardando");
   const pct = (n) => (ag.length ? (n / ag.length) * 100 : 0);
@@ -2035,8 +2026,7 @@ function atualizarConferencia() {
     ${kpi("recebido", "k-ok", "Recebidos", "var(--green-600)", ok.length, `${fmt(soma(ok, "volumes"))} vol. · ${reaisCurto(soma(ok, "peso"))}`)}
     ${kpi("nao_recebido", "k-no", "Não recebidos", "var(--red-700)", no.length, `${fmt(soma(no, "volumes"))} vol. · ${reaisCurto(soma(no, "peso"))}`)}
     ${kpi("pendente", "k-pe", "Pendentes", "var(--amber-600)", pe.length, `${fmt(soma(pe, "volumes"))} vol. · ${reaisCurto(soma(pe, "peso"))}`)}
-    ${kpi("aguardando", "k-ag", "Aguardando", "#9aa7b8", ag2.length, `${fmt(soma(ag2, "volumes"))} vol. · ${reaisCurto(soma(ag2, "peso"))}`)}
-    ${kpi("sem_agenda", "k-sa", "Sem agenda", "var(--amber-600)", sa.length, `${fmt(soma(sa, "volumes"))} vol. · ${reaisCurto(soma(sa, "peso"))}`)}`;
+    ${kpi("aguardando", "k-ag", "Aguardando", "#9aa7b8", ag2.length, `${fmt(soma(ag2, "volumes"))} vol. · ${reaisCurto(soma(ag2, "peso"))}`)}`;
 
   const filtros = [["todos", "Todas", ag.length], ["aguardando", "Aguardando", ag2.length], ["pendente", "Pendentes", pe.length], ["recebido", "Recebidas", ok.length], ["nao_recebido", "Não recebidas", no.length]];
   $("#rapidos").innerHTML = filtros.map(([f, n, c]) => `<button class="${S.filtro === f ? "on" : ""}" data-acao="filtro" data-f="${f}">${n} <em>${c}</em></button>`).join("");
@@ -2046,10 +2036,6 @@ function atualizarConferencia() {
   trocarTabela("#tabAgenda", mostra.length ? tabela(mostra, "agenda")
     : ag.length ? vazio("i-search", "Nenhuma agenda encontrada", "Nenhuma agenda corresponde ao filtro ou à busca.")
     : vazio("i-calendar", "Sem agendas nesta data", "Não há relatório importado para este dia.", `<button class="btn btn-primary" data-acao="importar">${ic("i-upload")}Importar relatório</button>`));
-
-  const saMostra = sa.filter(busca(S.q)).sort(recCmp);
-  trocarTabela("#tabSa", saMostra.length ? tabela(saMostra, "sa")
-    : vazio("i-truck", sa.length ? "Nenhum registro encontrado" : "Nenhum recebimento sem agenda", sa.length ? "Nenhum registro corresponde à busca." : "Use o botão <b>Recebido sem agenda</b> para registrar um fornecedor que chegou sem agendamento."));
 }
 
 /* ---------------------------------------------------------------- página: sem agenda */
@@ -2870,7 +2856,6 @@ document.addEventListener("click", (e) => {
     case "dash-preset": definirPeriodo(b.dataset.p); paginaDashboard(); break;
     case "dash-cd": S.dash.cd = b.dataset.cd; salvarPrefs(); atualizarDashboard(); break;
     case "filtro":
-      if (b.dataset.f === "sem_agenda") { $("#cardSa").scrollIntoView({ behavior: "smooth", block: "start" }); break; }
       S.filtro = S.filtro === b.dataset.f && b.dataset.f !== "todos" ? "todos" : b.dataset.f;
       atualizarConferencia();
       break;
