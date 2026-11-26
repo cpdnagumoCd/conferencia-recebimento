@@ -514,6 +514,24 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; }
 .tag-ant:hover { filter: brightness(.96); text-decoration: underline; }
 .t td .obs-nf { color: var(--navy-600); font-weight: 650; }
 
+/* ---------------------------------------------------------------- itens em ruptura e tag Priorizar */
+.duas-col.duas-iguais { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tag-prio { display: inline-flex; align-items: center; gap: 5px; margin-top: 5px; margin-right: 6px; height: 24px; padding: 0 9px; border-radius: 999px; border: 0; background: #fff3c4; color: #6b4e00; font-size: 11.5px; font-weight: 800; cursor: pointer; max-width: 100%; white-space: nowrap; overflow: hidden; box-shadow: inset 0 0 0 1px #f0cf5a; }
+.tag-prio svg { width: 14px; height: 14px; color: #b07d00; }
+.tag-prio em { font-style: normal; font-weight: 600; opacity: .9; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+.tag-prio em::before { content: "·"; margin-right: 5px; }
+.tag-prio:hover { filter: brightness(.97); text-decoration: underline; }
+.rapidos button.f-prio:not(.on) { border-color: #f0cf5a; color: #6b4e00; }
+.rupt-tit { padding: 10px 20px 0; font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.rupt-lista li { justify-content: space-between; gap: 10px; }
+.rupt-lista li > div { min-width: 0; }
+.rupt-lista li b { display: block; font-size: 13px; }
+.rupt-lista li span { display: block; font-size: 11.5px; color: var(--muted); font-weight: 600; }
+.rupt-lista li .selo { flex: none; display: inline-flex; color: inherit; font-size: 11.5px; }
+.rupt-lista li .selo.s-amber { color: var(--amber-800); }
+.rupt-lista li .selo svg { color: var(--amber-600); }
+@media (max-width: 1180px) { .duas-col.duas-iguais { grid-template-columns: minmax(0, 1fr); } }
+
 </style>
 </head>
 <body>
@@ -547,6 +565,7 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; }
   <div id="camada"></div>
   <input type="file" id="arquivo" accept=".xls,.xlsx,.csv,.json" multiple hidden>
   <input type="file" id="arquivoCtrl" accept=".xls,.xlsx,.xlsm,.csv" hidden>
+  <input type="file" id="arquivoRupt" accept=".xls,.xlsx,.xlsm,.csv" hidden>
   <div class="veu hidden" id="veu"><div><svg class="i"><use href="#i-upload"/></svg>Solte o relatório para importar</div></div>
 
   <script>
@@ -795,6 +814,38 @@ function registrosDoDocA(dia, dados) {
   return out;
 }
 
+/* ---- itens em ruptura: config/ruptura -> { itens: ["cod\tdescrição\tcód. forn.\tfornecedor\tcurva\tscore\tcomprador\tcategoria\tdias\tlojas"], em, criterio }
+   criterio "score" = a planilha tem coluna de score de priorização; "curva" = sem score, vale a Curva ABC (A primeiro). */
+const RUPT = { itens: [], em: "", criterio: "curva", limiar: 3, porForn: new Map() };
+const SCORE_PRIORIZAR = 90; // score de priorização a partir do qual o item marca a agenda com "Priorizar"
+function definirRuptura(d) {
+  const linhas = (d && Array.isArray(d.itens)) ? d.itens : [];
+  RUPT.em = (d && d.em) || "";
+  RUPT.criterio = d && d.criterio === "score" ? "score" : "curva";
+  RUPT.itens = linhas.map((l) => {
+    const [cod, desc, codForn, forn, curva, score, comprador, cat, dias, lojas] = String(l).split("\t");
+    const n = (v) => (v === "" || v === undefined ? null : Number(v));
+    return { cod, desc, codForn, forn, curva, score: n(score), comprador, cat, dias: n(dias), lojas: n(lojas) };
+  });
+  RUPT.itens.forEach((it) => (it.pontos = pontosRupt(it) || 0));
+  // "maior score": score de priorização a partir de SCORE_PRIORIZAR (se nenhum chegar lá, os 10% mais altos); sem score, a curva A
+  if (RUPT.criterio === "score") {
+    const v = RUPT.itens.map((it) => it.pontos).filter((x) => x > 0).sort((a, b) => b - a);
+    RUPT.limiar = !v.length ? Infinity : v[0] >= SCORE_PRIORIZAR ? SCORE_PRIORIZAR : v[Math.max(0, Math.ceil(v.length * 0.1) - 1)];
+  } else RUPT.limiar = 3;
+  RUPT.itens.forEach((it) => (it.prioritario = it.pontos > 0 && it.pontos >= RUPT.limiar));
+  RUPT.itens.sort((a, b) => b.pontos - a.pontos || natCmp(a.desc, b.desc));
+  RUPT.porForn = new Map();
+  RUPT.itens.filter((it) => it.prioritario && it.forn).forEach((it) => {
+    const k = chaveForn(it.forn);
+    if (!RUPT.porForn.has(k)) RUPT.porForn.set(k, []);
+    RUPT.porForn.get(k).push(it);
+  });
+}
+/** Itens em ruptura a priorizar de um fornecedor (já em ordem de prioridade). */
+const prioridadeDe = (forn) => RUPT.porForn.get(chaveForn(forn)) || [];
+const quandoData = (em) => { const m = String(em || "").match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})/); return m ? `${isoToBR(m[1])} às ${m[2]}` : ""; };
+
 /* ---- fornecedores com contrato logístico: config/contratos -> { nomes: [...], em: "AAAA-MM-DDTHH:MM" } */
 const CONTR = { nomes: [], em: "", chaves: new Set(), carregado: !NUVEM };
 /** Nome do fornecedor para comparação: sem acento, maiúsculas, pontuação nem espaços repetidos. */
@@ -847,6 +898,7 @@ function escutar() {
   if (pararEscuta) pararEscuta();
   escutarAnt();
   escutarContratos();
+  escutarRuptura();
   let q = db.collection("dias");
   if (!REDE.tudo) q = q.where("data", ">=", inicioJanela());
   // Se não houver cache nem resposta do servidor em 10 s, mostra o que tiver (a sincronização continua).
@@ -920,6 +972,18 @@ function aplicarAnt() {
   if (mesmo) return;
   S.ants = recs;
   if (REDE.carregado) aoMudarDados();
+}
+let pararRuptura = null;
+function escutarRuptura() {
+  if (pararRuptura) return;
+  pararRuptura = db.collection("config").doc("ruptura").onSnapshot((snap) => {
+    definirRuptura(snap.exists ? snap.data() : null);
+    if (REDE.carregado) aoMudarDados();
+  }, (err) => {
+    console.error("Erro ao ler os itens em ruptura:", err);
+    pararRuptura = null;
+    setTimeout(() => { if (db && REDE.estado !== "erro") escutarRuptura(); }, 60000);
+  });
 }
 let pararContratos = null;
 function escutarContratos() {
@@ -1134,6 +1198,7 @@ const BD = {
 /* ---------------------------------------------------------------- cargas antecipadas e contratos: gravação */
 const STORE_ANT = "nagumo-recebimento-antecipadas-v1";
 const STORE_CONTR = "nagumo-recebimento-contratos-v1";
+const STORE_RUPT = "nagumo-recebimento-ruptura-v1";
 function lerLocalAnt() {
   try { const d = JSON.parse(localStorage.getItem(STORE_ANT) || "[]"); return d.map((r) => decodificarA(r.id, r.data, r)).filter(Boolean); } catch (e) { return []; }
 }
@@ -1263,6 +1328,12 @@ const BDA = {
     }
     if (!NUVEM) { salvarLocalAnt(); aoMudarDados(); }
     return total;
+  },
+  /** Troca a lista de itens em ruptura (planilha base do dia). */
+  async gravarRuptura(itens, criterio) {
+    const d = { itens, em: `${todayISO()}T${nowHM()}`, criterio };
+    if (!NUVEM) { definirRuptura(d); try { localStorage.setItem(STORE_RUPT, JSON.stringify(d)); } catch (e) { toast("A lista é grande demais para guardar neste navegador.", "erro"); } aoMudarDados(); return; }
+    await db.collection("config").doc("ruptura").set(d);
   },
   /** Troca a lista de fornecedores com contrato logístico (vale para os dois CDs). */
   async gravarContratos(nomes) {
@@ -1610,6 +1681,81 @@ function importarControle(files) {
   });
 }
 
+/* ---------------------------------------------------------------- planilha base de itens em ruptura */
+function chaveCabRupt(h) {
+  const n = norm(h);
+  if (!n) return null;
+  if (n.includes("score") || n.includes("prioriz") || n.includes("pontua")) return "score";
+  if (n.startsWith("dias de ruptura") || n === "dias ruptura") return "dias";
+  if (n.startsWith("contagem lojas") || n.startsWith("qtd lojas") || n === "lojas") return "lojas";
+  if (n.startsWith("cod fornecedor") || n.startsWith("codigo fornecedor") || n.startsWith("cod. fornecedor") || n.startsWith("cod forn")) return "codForn";
+  if (n.includes("fornecedor")) return "forn";
+  if (n.startsWith("cod produto") || n.startsWith("codigo produto") || n.startsWith("cod. produto") || n === "plu" || n === "codigo" || n === "cod") return "cod";
+  if (n.startsWith("descri")) return "desc";
+  if (n.startsWith("curva")) return "curva";
+  if (n.startsWith("comprador")) return "comprador";
+  if (n === "catn3" || n.startsWith("categoria")) return "cat";
+  return null;
+}
+function lerRuptura(wb) {
+  // a aba de ruptura (ex.: "Ruptura CPD") ou a primeira com cabeçalho de produto e fornecedor
+  const abas = wb.SheetNames.slice().sort((a, b) => /rupt/i.test(b) - /rupt/i.test(a));
+  for (const nome of abas) {
+    const rows = linhasDaAba(wb.Sheets[nome], 30, 60000);
+    let h = -1, map = {};
+    for (let i = 0; i < rows.length && i < 30 && h < 0; i++) {
+      const m = {};
+      rows[i].forEach((c, j) => { const k = chaveCabRupt(c); if (k && m[k] === undefined) m[k] = j; });
+      if ((m.cod !== undefined || m.desc !== undefined) && (m.forn !== undefined || m.codForn !== undefined)) { h = i; map = m; }
+    }
+    if (h < 0) continue;
+    const vistos = new Set(), itens = [];
+    for (let i = h + 1; i < rows.length; i++) {
+      const g = (k) => (map[k] === undefined ? "" : rows[i][map[k]]);
+      const cod = String(g("cod") ?? "").trim();
+      let desc = String(g("desc") ?? "").trim().replace(/\s+/g, " ");
+      if (!cod && !desc) continue;
+      if (cod && desc.startsWith(cod)) desc = desc.slice(cod.length).replace(/^\s*-\s*/, ""); // "225643 - AVEIA…" -> "AVEIA…"
+      const chave = cod || norm(desc);
+      if (vistos.has(chave)) continue;
+      vistos.add(chave);
+      const forn = String(g("forn") ?? "").trim();
+      itens.push({ cod, desc: desc || cod, codForn: String(g("codForn") ?? "").trim(), forn: forn === "-" ? "" : forn,
+        curva: String(g("curva") ?? "").trim().toUpperCase().slice(0, 1), score: parseNum(g("score")),
+        comprador: String(g("comprador") ?? "").trim(), cat: String(g("cat") ?? "").trim(), dias: parseNum(g("dias")), lojas: parseNum(g("lojas")) });
+    }
+    return { itens, criterio: map.score !== undefined && itens.some((it) => it.score !== null) ? "score" : "curva", aba: nome };
+  }
+  return null;
+}
+let importandoRupt = false;
+function importarRuptura(files) {
+  const file = Array.from(files || [])[0];
+  if (!file) return;
+  if (NUVEM && !REDE.carregado) { toast("Aguarde a conexão com o servidor para importar.", "info"); return; }
+  if (importandoRupt) { toast("Já há uma importação em andamento.", "info"); return; }
+  comXLSX("Carregando o leitor de planilhas…", async () => {
+    importandoRupt = true;
+    try {
+      toast("Lendo a planilha de ruptura…", "info");
+      const buf = await lerArquivo(file);
+      const nomes = abrirPlanilha(buf, { bookSheets: true }).SheetNames;
+      const rupt = nomes.filter((n) => /rupt/i.test(n));
+      const lido = lerRuptura(abrirPlanilha(buf, rupt.length ? { sheets: rupt } : {}));
+      if (!lido || !lido.itens.length) { toast(`Nenhum item em ruptura encontrado em ${file.name} (precisa das colunas de produto e fornecedor).`, "erro"); return; }
+      // o documento do banco tem limite de tamanho: guarda até 7.000 itens, os de maior prioridade
+      const pts = (it) => (lido.criterio === "score" ? it.score || 0 : ({ A: 3, B: 2, C: 1 })[it.curva] || 0);
+      const itens = lido.itens.slice().sort((a, b) => pts(b) - pts(a)).slice(0, 7000);
+      const linhas = itens.map((it) => [it.cod, it.desc, it.codForn, it.forn, it.curva, it.score ?? "", it.comprador, it.cat, it.dias ?? "", it.lojas ?? ""].map((v) => String(v).replace(/[\t\n]/g, " ")).join("\t"));
+      await BDA.gravarRuptura(linhas, lido.criterio);
+      const nPrio = RUPT.itens.filter((it) => it.prioritario).length;
+      toast(`Itens em ruptura atualizados: ${plural(itens.length, "item", "itens")}${lido.itens.length > itens.length ? ` (dos ${fmt(lido.itens.length)}, os de maior prioridade)` : ""}. Prioridade pel${lido.criterio === "score" ? "o score de priorização" : "a curva ABC (a planilha não tem coluna de score)"}.`);
+    } catch (e) {
+      if (e && e.code) falhaGravacao(e); else { console.error(e); toast(`Não foi possível ler ${file.name}.`, "erro"); }
+    } finally { importandoRupt = false; }
+  });
+}
+
 /* ---------------------------------------------------------------- dados derivados */
 function datas() { return [...new Set(S.records.map((r) => r.data).concat(S.ants.map((r) => r.data)).filter(Boolean))].sort(); }
 function acertarData() {
@@ -1770,7 +1916,7 @@ function tabela(recs, modo) {
       : r.status === "nao_recebido" ? `<span class="quando">Automático: dia encerrado sem recebimento</span>` : "";
     return `<tr class="st-${r.status}" data-id="${r.id}">
       ${comData ? `<td class="c-data"><b>${isoToBR(r.data)}</b></td>` : ""}
-      <td class="forn c-forn">${esc(r.fornecedor)}${(r.tipoCarga || r.tipoEntrega) ? `<span class="obs">${esc([r.tipoCarga, r.tipoEntrega].filter(Boolean).join(" · "))}</span>` : ""}${modo === "agenda" ? tagAntecipacao(MAPA_ANT.get(r.id)) : ""}</td>
+      <td class="forn c-forn">${esc(r.fornecedor)}${(r.tipoCarga || r.tipoEntrega) ? `<span class="obs">${esc([r.tipoCarga, r.tipoEntrega].filter(Boolean).join(" · "))}</span>` : ""}${modo === "agenda" ? tagAntecipacao(MAPA_ANT.get(r.id)) + tagPrioridade(r.fornecedor) : ""}</td>
       <td class="c-num" data-l="Nota/Ped.">${r.notaPedido ? esc(r.notaPedido) : `<span class="vazio">—</span>`}</td>
       <td class="din c-num" data-l="R$">${fmt(r.peso, 2)}</td>
       <td class="din c-num" data-l="Vol.">${fmt(r.volumes)}</td>
@@ -1978,85 +2124,63 @@ function paginaAntecipadas() {
     <section class="kpi-grid kpi-grid-5" id="antKpis"></section>
     <section class="card card-lista">
       <div class="card-h">
-        <h2><span class="barra"></span><span id="antTit">Antecipações do dia</span></h2>
+        <h2><span class="barra amber"></span>Previsão pela agenda · <span id="prevDia"></span></h2>
         <span class="esp"></span>
-        <div class="rapidos" id="antPeriodo"></div>
-        <div class="rapidos" id="antCds"></div>
-        <div class="input-icone busca-tab">${ic("i-search")}<input class="input" id="buscaAnt" placeholder="Buscar fornecedor ou item…" value="${esc(S.qAntRaw || "")}"></div>
+        <div class="rapidos" id="prevFiltros"></div>
+        <div class="input-icone busca-tab">${ic("i-search")}<input class="input" id="buscaPrev" placeholder="Buscar fornecedor ou nota…" value="${esc(S.qPrevRaw || "")}"></div>
       </div>
-      <div id="tabAnt"></div>
+      <div id="tabPrev"></div>
     </section>
-    <div class="duas-col">
-      <section class="card card-lista">
-        <div class="card-h">
-          <h2><span class="barra amber"></span>Previsão pela agenda · <span id="prevDia"></span></h2>
-          <span class="esp"></span>
-          <div class="rapidos" id="prevFiltros"></div>
-        </div>
-        <div id="tabPrev"></div>
-      </section>
+    <div class="duas-col duas-iguais">
       <section class="card card-contr">
         <div class="card-h"><h2><span class="barra"></span>Fornecedores com contrato logístico</h2></div>
         <div id="contrInfo"></div>
       </section>
+      <section class="card card-contr" id="cardRupt">
+        <div class="card-h"><h2><span class="barra"></span>Itens em ruptura</h2></div>
+        <div id="ruptInfo"></div>
+      </section>
     </div>`;
-  $("#buscaAnt").addEventListener("input", (e) => { S.qAntRaw = e.target.value; S.qAnt = norm(e.target.value); atualizarAntecipadas(); });
+  $("#buscaPrev").addEventListener("input", (e) => { S.qPrevRaw = e.target.value; S.qPrev = norm(e.target.value); atualizarAntecipadas(); });
   atualizarAntecipadas();
 }
 
 function atualizarAntecipadas() {
   if (!$("#antKpis")) return;
   $("#antAviso").innerHTML = ANT.negado ? `<section class="card"><div class="nota nota-alerta">${ic("i-alert")}<div><b>O banco ainda não aceita as cargas antecipadas.</b> Publique as regras novas do Firestore (arquivo <b>firestore.rules</b>) no console do Firebase: Firestore Database &gt; Regras &gt; colar o texto &gt; Publicar.</div></div></section>` : "";
-  const doDiaAnt = antsDia();
-  const todos = (S.antTodas ? S.ants : doDiaAnt).filter(doCd("todos")), ants = todos.filter(doCd(S.cdAnt));
+  const doDiaAnt = antsDia().filter(doCd("todos"));
+  const ants = doDiaAnt;
   const ags = agendasDia();
   const mapa = vincular(ags, doDiaAnt);
-  const dsAnt = [...new Set(todos.map((r) => r.data))].sort();
   const agAnt = ags.filter((g) => mapa.has(g.id)).length;
   const pct = ags.length ? (agAnt / ags.length) * 100 : 0;
   const cx = ants.filter((r) => unid(r) === "CX"), kg = ants.filter((r) => unid(r) === "KG");
   const semC = ants.filter((r) => contratoDe(r) === "sem").length;
-  $("#antTit").textContent = S.antTodas ? "Todas as antecipações" : "Antecipações do dia";
   $("#prevDia").textContent = isoToBR(S.date);
-  $("#antPeriodo").innerHTML = `<button class="${S.antTodas ? "" : "on"}" data-acao="ant-periodo" data-todas="0">Dia ${isoToBR(S.date)}</button>
-    <button class="${S.antTodas ? "on" : ""}" data-acao="ant-periodo" data-todas="1">Todas as datas <em>${fmt(S.ants.length)}</em></button>`;
   $("#antKpis").innerHTML = `
-    ${S.antTodas ? `<div class="card kpi estatico destaque">
-      <small>Lançamentos</small>
-      <b>${fmt(ants.length)}</b>
-      <div class="medidor"><i class="ant" style="width:100%"></i></div>
-      <span>${dsAnt.length ? `${isoToBR(dsAnt[0])} a ${isoToBR(dsAnt[dsAnt.length - 1])} · ${plural(dsAnt.length, "dia", "dias")}` : "Nenhum lançamento"}</span>
-    </div>` : `<div class="card kpi estatico destaque">
+    <div class="card kpi estatico destaque">
       <small>Agendas antecipadas</small>
       <b>${agAnt} <em>de ${ags.length}</em></b>
       <div class="medidor"><i class="ant" style="width:${pct}%"></i></div>
       <span>${ags.length ? `${fmt(Math.round(pct))}% das agendas do dia` : "Sem agendas importadas neste dia"}</span>
-    </div>`}
+    </div>
     ${kpiFixo("Cargas antecipadas", "var(--serie-2)", fmt(soma(ants, "antecipadas")), `de ${plural(soma(ants, "cargas"), "carga lançada", "cargas lançadas")}`)}
     ${kpiFixo("Volumes antecipados", "var(--navy-600)", `${fmt(soma(cx, "volAnt"))} <em>CX</em>`, `+ ${fmt(soma(kg, "volAnt"))} KG`)}
     ${kpiFixo("Valor das cargas", "var(--green-600)", reaisCurto(soma(ants, "valor")), plural(ants.length, "lançamento", "lançamentos"))}
     ${kpiFixo("Sem contrato", "var(--red-700)", fmt(semC), CONTR.nomes.length ? `${ants.filter((r) => ["acordo", "oportunidade"].includes(contratoDe(r))).length} acordo / oportunidade` : "Lista não importada", "k-no")}`;
 
-  const cds = [["todos", "Todos", todos.length], ...CDS.map((c) => [c, c, todos.filter((r) => r.cd === c).length])];
-  $("#antCds").innerHTML = !VARIOS_CDS ? "" : cds.map(([c, n, q]) => `<button class="${S.cdAnt === c ? "on" : ""}" data-acao="cd-ant" data-cd="${c}">${n} <em>${q}</em></button>`).join("");
-
-  const busc = S.qAnt ? (r) => S.qAnt.split(" ").every((t) => norm([r.fornecedor, r.item, r.cd, r.obs, r.notas].join(" ")).includes(t)) : () => true;
-  const mostra = ants.filter(busc).sort((a, b) => natCmp(b.data, a.data) || natCmp(a.cd, b.cd) || natCmp(a.fornecedor, b.fornecedor));
-  trocarTabela("#tabAnt", mostra.length ? tabelaAnt(mostra, S.antTodas, S.antTodas ? S.antLimite : Infinity)
-    : vazio("i-fast", todos.length ? "Nenhuma antecipação encontrada" : S.antTodas ? "Nenhuma antecipação lançada" : "Nenhuma antecipação neste dia",
-      todos.length ? "Nenhum lançamento corresponde ao filtro ou à busca." : "Registre pela lista <b>Previsão pela agenda</b>, que já traz fornecedor, valor e volumes, ou use <b>Nova antecipação</b>.",
-      todos.length ? "" : `<button class="btn btn-red" data-acao="nova-ant">${ic("i-plus")}Nova antecipação</button>`));
-
-  // previsão: agendas do relatório, com a antecipação registrada (tratadas) ou ainda não (a tratar)
-  const filtros = [["todos", "Todas", ags.length], ["atratar", "A tratar", ags.length - agAnt], ["tratadas", "Tratadas", agAnt]];
-  $("#prevFiltros").innerHTML = filtros.map(([f, n, q]) => `<button class="${S.filtroPrev === f ? "on" : ""}" data-acao="filtro-prev" data-f="${f}">${n} <em>${q}</em></button>`).join("");
-  const prev = ags.filter((g) => S.filtroPrev === "todos" || (S.filtroPrev === "tratadas") === mapa.has(g.id)).sort(recCmp);
+  // previsão: agendas do relatório, com a antecipação registrada (tratadas) ou ainda não (a tratar), e as que têm item em ruptura a priorizar
+  const prio = ags.filter((g) => prioridadeDe(g.fornecedor).length).length;
+  const filtros = [["todos", "Todas", ags.length], ["atratar", "A tratar", ags.length - agAnt], ["tratadas", "Tratadas", agAnt], ["priorizar", "Priorizar", prio]];
+  $("#prevFiltros").innerHTML = filtros.map(([f, n, q]) => `<button class="${S.filtroPrev === f ? "on" : ""} ${f === "priorizar" ? "f-prio" : ""}" data-acao="filtro-prev" data-f="${f}">${n} <em>${q}</em></button>`).join("");
+  const passaFiltro = (g) => S.filtroPrev === "todos" || (S.filtroPrev === "priorizar" ? prioridadeDe(g.fornecedor).length > 0 : (S.filtroPrev === "tratadas") === mapa.has(g.id));
+  const prev = ags.filter(passaFiltro).filter(busca(S.qPrev || "")).sort((a, b) => prioridadeDe(b.fornecedor).length - prioridadeDe(a.fornecedor).length || recCmp(a, b));
   trocarTabela("#tabPrev", prev.length ? `<div class="tabela-box"><table class="t resp t-prev">
       <thead><tr><th>Fornecedor</th><th>Contrato</th><th class="r">Valor (R$)</th><th class="r">Volumes</th><th>Antecipação</th></tr></thead>
       <tbody>${prev.map((g) => {
         const a = mapa.get(g.id);
         return `<tr class="${a ? "tratada" : ""}">
-          <td class="forn c-forn">${esc(g.fornecedor)}${g.notaPedido ? `<span class="obs">Nota/Ped. ${esc(g.notaPedido)}</span>` : ""}</td>
+          <td class="forn c-forn">${esc(g.fornecedor)}${g.notaPedido ? `<span class="obs">Nota/Ped. ${esc(g.notaPedido)}</span>` : ""}${tagPrioridade(g.fornecedor)}</td>
           <td class="c-sel">${seloContrato(contratoAuto(g.fornecedor))}</td>
           <td class="din c-num" data-l="R$">${fmt(g.peso, 2)}</td>
           <td class="din c-num" data-l="Vol.">${fmt(g.volumes)}</td>
@@ -2064,9 +2188,54 @@ function atualizarAntecipadas() {
             : `<button class="btn btn-outline btn-sm" data-acao="registrar-ant" data-ag="${g.id}">${ic("i-plus")}Registrar</button>`}</td>
         </tr>`;
       }).join("")}</tbody></table></div>`
-    : vazio("i-calendar", ags.length ? "Nenhuma agenda neste filtro" : "Sem agendas neste dia", ags.length ? "Troque o filtro para ver as outras agendas." : "Importe o relatório do Acrux para ver a previsão das cargas do dia."));
+    : vazio("i-calendar", ags.length ? "Nenhuma agenda neste filtro" : "Sem agendas neste dia", ags.length ? "Troque o filtro ou a busca para ver as outras agendas." : "Importe o relatório do Acrux para ver a previsão das cargas do dia."));
 
   atualizarContratos();
+  atualizarRuptura();
+}
+
+/* ---------------------------------------------------------------- itens em ruptura (consulta e prioridade) */
+const pontosRupt = (it) => (RUPT.criterio === "score" ? it.score : ({ A: 3, B: 2, C: 1 })[it.curva] || 0);
+function seloPontos(it) {
+  const prio = it.pontos >= RUPT.limiar && it.pontos > 0;
+  const txt = RUPT.criterio === "score" ? `Score ${it.score == null ? "—" : fmt(it.score, Number.isInteger(it.score) ? 0 : 1)}` : `Curva ${it.curva || "—"}`;
+  return `<span class="selo ${prio ? "s-amber" : "s-gray"}">${prio ? ic("i-alert") : ""}${txt}</span>`;
+}
+function atualizarRuptura() {
+  const el = $("#ruptInfo");
+  if (!el) return;
+  const nPrio = RUPT.itens.filter((it) => it.prioritario).length;
+  const regra = RUPT.criterio === "score" ? `score ${fmt(RUPT.limiar, Number.isInteger(RUPT.limiar) ? 0 : 1)} ou mais` : "curva A";
+  const resumo = `<b>${fmt(RUPT.itens.length)}</b><span>${RUPT.itens.length ? `itens · ${fmt(nPrio)} a priorizar (${regra}) · atualizada em ${quandoData(RUPT.em)}` : "planilha base ainda não carregada"}</span>`;
+  if (!$("#buscaRupt")) {
+    el.innerHTML = `
+      <div class="contr-topo">
+        <div id="ruptResumo">${resumo}</div>
+        <button class="btn btn-outline btn-sm" data-acao="importar-ruptura">${ic("i-refresh")}Atualizar lista</button>
+      </div>
+      <div class="contr-busca input-icone">${ic("i-search")}<input class="input" id="buscaRupt" placeholder="Item, código ou fornecedor…" value="${esc(S.qRupt || "")}"></div>
+      <div id="ruptRes"></div>
+      <p class="dica contr-dica">Carregue todos os dias a planilha base de itens em ruptura. Os itens com ${RUPT.criterio === "score" ? "maior score de priorização" : "maior prioridade"} marcam a agenda do fornecedor com a tag <b>Priorizar</b>.</p>`;
+    $("#buscaRupt").addEventListener("input", (e) => { S.qRupt = e.target.value; atualizarRuptura(); });
+  } else $("#ruptResumo").innerHTML = resumo;
+  const q = norm(S.qRupt || ""), qk = chaveForn(S.qRupt || "");
+  const lista = q
+    ? RUPT.itens.filter((it) => norm(`${it.cod} ${it.desc} ${it.codForn} ${it.comprador} ${it.cat}`).includes(q) || (qk && chaveForn(it.forn).includes(qk)))
+    : RUPT.itens.filter((it) => it.prioritario);
+  const mostra = lista.slice(0, 60);
+  $("#ruptRes").innerHTML = !RUPT.itens.length ? "" : `
+    <div class="rupt-tit">${q ? `${plural(lista.length, "item encontrado", "itens encontrados")}` : `Maiores prioridades · ${plural(lista.length, "item", "itens")}`}${lista.length > mostra.length ? ` (mostrando ${mostra.length})` : ""}</div>
+    ${mostra.length ? `<ul class="contr-lista rupt-lista">${mostra.map((it) => `<li>
+        <div><b>${esc(it.desc)}</b><span>${esc(it.cod)} · ${esc(it.forn || "sem fornecedor")}${it.curva ? ` · Curva ${esc(it.curva)}` : ""}${it.dias != null ? ` · ${plural(it.dias, "dia", "dias")} em ruptura` : ""}${it.lojas != null ? ` · ${plural(it.lojas, "loja", "lojas")}` : ""}</span></div>
+        ${seloPontos(it)}
+      </li>`).join("")}</ul>` : `<p class="contr-nada">${ic("i-x")}<span>Nenhum item em ruptura com esse nome, código ou fornecedor.</span></p>`}`;
+}
+/** Tag "Priorizar" na agenda do fornecedor que tem item em ruptura com maior score. */
+function tagPrioridade(forn) {
+  const itens = prioridadeDe(forn);
+  if (!itens.length) return "";
+  const lista = itens.slice(0, 8).map((it) => `• ${it.desc}`).join("\n") + (itens.length > 8 ? `\n… e mais ${itens.length - 8}` : "");
+  return `<button type="button" class="tag-prio" data-acao="ver-ruptura" data-forn="${esc(forn)}" title="Itens em ruptura para priorizar:\n${esc(lista)}">${ic("i-alert")}Priorizar<em>${esc(itens[0].desc)}${itens.length > 1 ? ` +${itens.length - 1}` : ""}</em></button>`;
 }
 
 function atualizarContratos() {
@@ -2672,6 +2841,12 @@ document.addEventListener("click", (e) => {
     case "exportar": exportarExcel(); break;
     case "exportar-ant": exportarAntecipadas(); break;
     case "importar-controle": $("#arquivoCtrl").click(); break;
+    case "importar-ruptura": $("#arquivoRupt").click(); break;
+    case "ver-ruptura":
+      S.qRupt = b.dataset.forn;
+      if (S.pagina !== "antecipadas") irPara("antecipadas"); else { if ($("#buscaRupt")) $("#buscaRupt").value = S.qRupt; atualizarRuptura(); }
+      setTimeout(() => { const c = $("#cardRupt"); if (c) window.scrollTo(0, c.getBoundingClientRect().top + window.scrollY - 110); }, 80);
+      break;
     case "nova-ant": abrirGavetaAnt(null, null); break;
     case "editar-ant": abrirGavetaAnt(findAnt(b.dataset.ant), null); break;
     case "registrar-ant": abrirGavetaAnt(null, findRec(b.dataset.ag)); break;
@@ -2705,6 +2880,7 @@ document.addEventListener("change", (e) => {
   if (e.target.id === "diaIr" && e.target.value) irParaData(e.target.value);
   if (e.target.id === "arquivo") { importarArquivos(e.target.files); e.target.value = ""; }
   if (e.target.id === "arquivoCtrl") { importarControle(e.target.files); e.target.value = ""; }
+  if (e.target.id === "arquivoRupt") { importarRuptura(e.target.files); e.target.value = ""; }
   if ((e.target.id === "dashIni" || e.target.id === "dashFim") && e.target.value) {
     S.dash[e.target.id === "dashIni" ? "ini" : "fim"] = e.target.value; S.dash.preset = "";
     if (S.dash.ini > S.dash.fim) [S.dash.ini, S.dash.fim] = [S.dash.fim, S.dash.ini];
@@ -2744,6 +2920,7 @@ carregarPrefs();
 if (!NUVEM) {
   S.records = lerLocal(); S.ants = lerLocalAnt();
   try { definirContratos(JSON.parse(localStorage.getItem(STORE_CONTR) || "null")); } catch (e) { definirContratos(null); }
+  try { definirRuptura(JSON.parse(localStorage.getItem(STORE_RUPT) || "null")); } catch (e) { definirRuptura(null); }
 }
 renderShell();
 atualizarTudo();

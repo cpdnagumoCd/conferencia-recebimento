@@ -56,6 +56,9 @@ Não é preciso ativar o Authentication: o app não tem login nem pede nome; que
   Lançamento novo entra; linha alterada na planilha (mesma data, fornecedor e item) atualiza o lançamento que já existe,
   mantendo a observação feita no app; linha igual não se repete; linha apagada da planilha continua no app.
   Quem não está na lista conta como **sem contrato logístico**; no lançamento dá para trocar por acordo pontual ou compra por oportunidade.
+- **Itens em ruptura** (tela Cargas antecipadas): **Atualizar lista** carrega a planilha base do dia (*Lista de Itens em Ruptura CPD*).
+  A agenda do fornecedor que tem item com **score de priorização 90 ou mais** ganha a tag amarela **Priorizar** (na previsão e no
+  Recebimento); clicar na tag mostra os itens. Sem coluna de score na planilha, vale a curva A.
 - **Dashboard**: cargas agendadas (relatório do Acrux) × cargas antecipadas por dia, com resumos por situação do contrato,
   tipo e situação da carga, e o recebimento das agendas no período escolhido.
 - **Dias anteriores**: as setas e a lista de datas mostram os dias com agenda; o ícone de calendário ao lado abre qualquer data,

@@ -7,6 +7,7 @@ rules_version = '2';
 //   dias/{AAAA-MM-DD}         agendas e recebimentos do dia, registros em "itens"
 //   antecipadas/{AAAA-MM-DD}  cargas antecipadas do dia, registros em "itens"
 //   config/contratos          lista de fornecedores com contrato logístico
+//   config/ruptura            itens em ruptura (planilha base do dia)
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -35,6 +36,14 @@ service cloud.firestore {
       allow create, update: if request.resource.data.keys().hasOnly(['nomes', 'em'])
                             && request.resource.data.nomes is list
                             && request.resource.data.nomes.size() <= 20000
+                            && request.resource.data.em is string;
+    }
+
+    match /config/ruptura {
+      allow read: if true;
+      allow create, update: if request.resource.data.keys().hasOnly(['itens', 'em', 'criterio'])
+                            && request.resource.data.itens is list
+                            && request.resource.data.itens.size() <= 20000
                             && request.resource.data.em is string;
     }
 
