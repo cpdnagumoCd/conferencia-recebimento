@@ -46,8 +46,10 @@ Não é preciso ativar o Authentication: o app não tem login nem pede nome; que
   relatório não são apagadas.
 - **Quem controla o recebimento**: tela **Recebimento**, botões **Pendente** (amarelo) / **Recebido** / **Não recebido** em cada agenda, e
   **Recebido sem agenda** para cargas sem agendamento. Sem nenhum botão marcado, a agenda fica cinza, como **Aguardando entrega**;
-  clicar de novo no botão marcado desmarca.
-- **Cargas antecipadas**: registra as antecipações do CD 2 como na planilha *CONTROLE DE AGENDAMENTO* (fornecedor, item, situação do
+  clicar de novo no botão marcado desmarca. Agendas de **dias anteriores** que ficaram em Aguardando entrega passam sozinhas
+  para **Não recebido** ("Automático: dia encerrado sem recebimento"). A agenda com antecipação registrada mostra a tag
+  **Antecipada** (verde) ou **Não antecipada** (vermelha), com as notas fiscais.
+- **Cargas antecipadas**: registra as antecipações do CD 2 como na planilha *CONTROLE DE AGENDAMENTO* (fornecedor, item, notas fiscais, situação do
   contrato, unidade, volumes previstos e antecipados, cargas, tipo e situação da carga, valor). A lista **Previsão pela agenda** traz as
   agendas do dia: **Registrar** já preenche fornecedor, valor e volumes. **Importar planilha** lê a aba *Fornecedores com Contrato*
   (atualize todo dia) e, se você quiser, os lançamentos da aba *Agendamento CD 2*. O app trabalha só com o **CD 2**.

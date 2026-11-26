@@ -504,6 +504,16 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; }
 .cd-fixo { height: 42px; display: inline-flex; align-items: center; padding: 0 14px; border-radius: 9px; background: var(--navy-100); color: var(--navy); font-weight: 800; align-self: flex-start; }
 .grade-resumo > :last-child:nth-child(odd) { grid-column: 1 / -1; }
 
+/* ---------------------------------------------------------------- tag de antecipação na agenda do dia */
+.tag-ant { display: inline-flex; align-items: center; gap: 5px; margin-top: 5px; height: 24px; white-space: nowrap; overflow: hidden; padding: 0 9px; border-radius: 999px; border: 0; background: var(--navy-100); color: var(--navy); font-size: 11.5px; font-weight: 700; cursor: pointer; max-width: 100%; }
+.tag-ant svg { width: 14px; height: 14px; }
+.tag-ant em { font-style: normal; font-weight: 600; opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tag-ant em::before { content: "·"; margin-right: 5px; }
+.tag-ant.ok { background: var(--green-50); color: var(--green-700); }
+.tag-ant.no { background: var(--red-50); color: var(--red-800); }
+.tag-ant:hover { filter: brightness(.96); text-decoration: underline; }
+.t td .obs-nf { color: var(--navy-600); font-weight: 650; }
+
 </style>
 </head>
 <body>
@@ -602,7 +612,7 @@ const CONTRATOS = {
   na: { nome: "Não se aplica", curto: "Não se aplica", selo: "s-gray" },
 };
 const TIPOS = { pulmao: "Pulmão", norma: "Norma", inversa: "Sel. inversa" };
-const SITUACOES = { concluida: { nome: "Agenda concluída", selo: "s-green" }, nao_concluida: { nome: "Agenda não concluída", selo: "s-red" } };
+const SITUACOES = { antecipada: { nome: "Antecipada", selo: "s-green" }, nao_antecipada: { nome: "Não antecipada", selo: "s-red" } };
 
 const S = { records: [], ants: [], date: null, filtro: "todos", q: "", saTodas: false, qSa: "", pagina: "conferencia", gaveta: null,
   cdAnt: "todos", antTodas: false, antLimite: 300, filtroPrev: "todos", qAnt: "", dash: { ini: null, fim: null, preset: "7", cd: "todos" } };
@@ -737,13 +747,13 @@ function registrosDoDoc(dia, dados) {
 }
 
 /* ---- cargas antecipadas: antecipadas/{AAAA-MM-DD} -> { data, itens: { <id>: registro compacto } } */
-const CAMPOS_A = { cd: "k", fornecedor: "f", item: "i", contrato: "c", unidade: "u", volPrev: "p", volAnt: "a", cargas: "q", antecipadas: "n", tipo: "t", situacao: "s", valor: "v", obs: "o", agenda: "g" };
+const CAMPOS_A = { cd: "k", fornecedor: "f", item: "i", contrato: "c", unidade: "u", volPrev: "p", volAnt: "a", cargas: "q", antecipadas: "n", tipo: "t", situacao: "s", valor: "v", obs: "o", agenda: "g", notas: "e" };
 const COD_A = {
   cd: { "CD 1": 1, "CD 2": 2 },
   contrato: { com: "c", sem: "s", acordo: "a", oportunidade: "o", na: "x" }, // automático (pela lista de contratos) = ausente
   unidade: { KG: "g" }, // CX = ausente
   tipo: { pulmao: "p", norma: "n", inversa: "i" },
-  situacao: { concluida: "c", nao_concluida: "n" },
+  situacao: { antecipada: "a", nao_antecipada: "n" },
 };
 const PADRAO_A = { cd: "", contrato: "auto", unidade: "CX", tipo: "", situacao: "" };
 const NUM_A = ["volPrev", "volAnt", "cargas", "antecipadas", "valor"];
@@ -850,7 +860,7 @@ function escutar() {
     recsJanela = [];
     snap.docs.forEach((d) => recsJanela.push(...registrosDoDoc(d.id, d.data())));
     aplicarRegistros();
-    if (!fromCache) compactarAntigos();
+    if (!fromCache) { compactarAntigos(); fecharDiasAnteriores(); }
   }, (err) => {
     console.error("Erro na sincronização:", err);
     clearTimeout(espera);
@@ -938,6 +948,27 @@ function aplicarRegistros() {
   REDE.carregado = true;
   if (primeiraVez) { atualizarTudo(); avisarDadosAntigos(); } else aoMudarDados();
 }
+
+/**
+ * Agendas de dias anteriores que ficaram em "Aguardando entrega" (sem Pendente, Recebido nem Não recebido)
+ * passam sozinhas para "Não recebido". Vale para os dias acompanhados em tempo real (últimos JANELA_DIAS dias).
+ */
+let fechando = false;
+function fecharDiasAnteriores() {
+  if (fechando || importando || !REDE.carregado || (NUVEM && (!db || REDE.estado !== "online"))) return;
+  const hoje = todayISO(), ini = inicioJanela();
+  const recs = S.records.filter((r) => r.status === "aguardando" && r.data < hoje && r.data >= ini);
+  if (!recs.length) return;
+  const aviso = () => toast(`${plural(recs.length, "agenda", "agendas")} de dias anteriores sem marcação ${recs.length === 1 ? "passou" : "passaram"} para Não recebido.`, "info");
+  if (!NUVEM) { recs.forEach((r) => Object.assign(r, { status: "nao_recebido", conferidoEm: "" })); salvarLocal(); aoMudarDados(); aviso(); return; }
+  fechando = true;
+  const porDia = {};
+  recs.forEach((r) => Object.assign((porDia[r.data] = porDia[r.data] || {}), camposGravados(r.id, { status: "nao_recebido", conferidoEm: "" })));
+  const b = db.batch();
+  Object.entries(porDia).forEach(([d, upd]) => b.update(docDia(d), upd));
+  b.commit().then(aviso, (e) => console.error("Falha ao encerrar os dias anteriores:", e)).finally(() => (fechando = false));
+}
+setInterval(fecharDiasAnteriores, 5 * 60 * 1000); // vira o dia com o app aberto
 
 /** Regrava no formato compacto os registros que ainda estão no formato antigo (uma vez só). */
 let compactando = false;
@@ -1444,7 +1475,7 @@ function importarArquivos(files) {
       concluirImportacao(await BD.incluir(linhas), erros);
     } catch (e) {
       falhaGravacao(e);
-    } finally { importando = false; }
+    } finally { importando = false; fecharDiasAnteriores(); }
   });
 }
 
@@ -1486,7 +1517,7 @@ function chaveCabAnt(h) {
 const deTexto = {
   contrato: (v) => { const n = norm(v); return n.startsWith("acordo") ? "acordo" : n.startsWith("compra") ? "oportunidade" : n.startsWith("nao se aplica") ? "na" : "auto"; },
   tipo: (v) => { const n = norm(v); return n.startsWith("pulm") ? "pulmao" : n.startsWith("norma") ? "norma" : n.includes("invers") ? "inversa" : ""; },
-  situacao: (v) => { const n = norm(v); return n.includes("nao conclu") ? "nao_concluida" : n.includes("conclu") ? "concluida" : ""; },
+  situacao: (v) => { const n = norm(v); return n.includes("nao antecip") ? "nao_antecipada" : n.includes("antecip") ? "antecipada" : ""; },
   unidade: (v) => (norm(v) === "kg" ? "KG" : "CX"),
 };
 /** Lê a aba de contratos (coluna "Razão Social"/"Fornecedor"; sem cabeçalho, a primeira coluna). */
@@ -1722,15 +1753,24 @@ function atualizarTudo() {
 }
 
 /* ---------------------------------------------------------------- tabela de registros */
+/** Antecipação ligada a cada agenda do dia (tela Recebimento): id da agenda -> lançamento. */
+let MAPA_ANT = new Map();
+function tagAntecipacao(a) {
+  if (!a) return "";
+  const sit = SITUACOES[a.situacao];
+  const cls = a.situacao === "antecipada" ? "ok" : a.situacao === "nao_antecipada" ? "no" : "";
+  return `<button type="button" class="tag-ant ${cls}" data-acao="editar-ant" data-ant="${a.id}" title="Abrir a antecipação">${ic("i-fast")}${sit ? sit.nome : "Antecipação registrada"}${a.notas ? `<em>NF ${esc(a.notas)}</em>` : ""}</button>`;
+}
 function tabela(recs, modo) {
   const comData = modo === "historico";
   if (!recs.length) return "";
   const linhas = recs.map((r) => {
     const quando = r.status === "aguardando" ? `<span class="quando">Aguardando entrega</span>`
-      : r.conferidoEm ? `<span class="quando">${r.status === "pendente" ? `Pendente desde ${esc(r.conferidoEm)}` : `${r.status === "recebido" ? "Recebido" : "Marcado"} às ${esc(r.conferidoEm)}`}</span>` : "";
+      : r.conferidoEm ? `<span class="quando">${r.status === "pendente" ? `Pendente desde ${esc(r.conferidoEm)}` : `${r.status === "recebido" ? "Recebido" : "Marcado"} às ${esc(r.conferidoEm)}`}</span>`
+      : r.status === "nao_recebido" ? `<span class="quando">Automático: dia encerrado sem recebimento</span>` : "";
     return `<tr class="st-${r.status}" data-id="${r.id}">
       ${comData ? `<td class="c-data"><b>${isoToBR(r.data)}</b></td>` : ""}
-      <td class="forn c-forn">${esc(r.fornecedor)}${(r.tipoCarga || r.tipoEntrega) ? `<span class="obs">${esc([r.tipoCarga, r.tipoEntrega].filter(Boolean).join(" · "))}</span>` : ""}</td>
+      <td class="forn c-forn">${esc(r.fornecedor)}${(r.tipoCarga || r.tipoEntrega) ? `<span class="obs">${esc([r.tipoCarga, r.tipoEntrega].filter(Boolean).join(" · "))}</span>` : ""}${modo === "agenda" ? tagAntecipacao(MAPA_ANT.get(r.id)) : ""}</td>
       <td class="c-num" data-l="Nota/Ped.">${r.notaPedido ? esc(r.notaPedido) : `<span class="vazio">—</span>`}</td>
       <td class="din c-num" data-l="R$">${fmt(r.peso, 2)}</td>
       <td class="din c-num" data-l="Vol.">${fmt(r.volumes)}</td>
@@ -1818,6 +1858,7 @@ function paginaConferencia() {
 function atualizarConferencia() {
   if (!$("#kpis")) return;
   const ag = agendasDia();
+  MAPA_ANT = vincular(ag, antsDia().filter(doCd("todos")));
   const sa = semAgendaDia();
   const por = (st) => ag.filter((r) => r.status === st);
   const ok = por("recebido"), no = por("nao_recebido"), pe = por("pendente"), ag2 = por("aguardando");
@@ -1999,7 +2040,7 @@ function atualizarAntecipadas() {
   const cds = [["todos", "Todos", todos.length], ...CDS.map((c) => [c, c, todos.filter((r) => r.cd === c).length])];
   $("#antCds").innerHTML = !VARIOS_CDS ? "" : cds.map(([c, n, q]) => `<button class="${S.cdAnt === c ? "on" : ""}" data-acao="cd-ant" data-cd="${c}">${n} <em>${q}</em></button>`).join("");
 
-  const busc = S.qAnt ? (r) => S.qAnt.split(" ").every((t) => norm([r.fornecedor, r.item, r.cd, r.obs].join(" ")).includes(t)) : () => true;
+  const busc = S.qAnt ? (r) => S.qAnt.split(" ").every((t) => norm([r.fornecedor, r.item, r.cd, r.obs, r.notas].join(" ")).includes(t)) : () => true;
   const mostra = ants.filter(busc).sort((a, b) => natCmp(b.data, a.data) || natCmp(a.cd, b.cd) || natCmp(a.fornecedor, b.fornecedor));
   trocarTabela("#tabAnt", mostra.length ? tabelaAnt(mostra, S.antTodas, S.antTodas ? S.antLimite : Infinity)
     : vazio("i-fast", todos.length ? "Nenhuma antecipação encontrada" : S.antTodas ? "Nenhuma antecipação lançada" : "Nenhuma antecipação neste dia",
@@ -2019,7 +2060,7 @@ function atualizarAntecipadas() {
           <td class="c-sel">${seloContrato(contratoAuto(g.fornecedor))}</td>
           <td class="din c-num" data-l="R$">${fmt(g.peso, 2)}</td>
           <td class="din c-num" data-l="Vol.">${fmt(g.volumes)}</td>
-          <td class="c-acao">${a ? `<button class="selo s-green selo-btn" data-acao="editar-ant" data-ant="${a.id}" title="Abrir o lançamento">${ic("i-check")}${VARIOS_CDS ? esc(a.cd || "Registrada") : "Registrada"}${antecipadasDe(a) ? ` · ${antecipadasDe(a)} antec.` : ""}</button>`
+          <td class="c-acao">${a ? tagAntecipacao(a)
             : `<button class="btn btn-outline btn-sm" data-acao="registrar-ant" data-ag="${g.id}">${ic("i-plus")}Registrar</button>`}</td>
         </tr>`;
       }).join("")}</tbody></table></div>`
@@ -2056,7 +2097,7 @@ function tabelaAnt(recs, comData, limite = Infinity) {
   const linhas = recs.slice(0, limite).map((r) => `<tr data-ant="${r.id}">
       ${comData ? `<td class="c-data"><b>${isoToBR(r.data)}</b></td>` : ""}
       ${VARIOS_CDS ? `<td class="c-cd"><span class="selo s-navy">${esc(r.cd || "—")}</span></td>` : ""}
-      <td class="forn c-forn">${esc(r.fornecedor)}${r.item ? `<span class="obs">${esc(r.item)}</span>` : ""}${r.obs ? `<span class="obs obs-a">${esc(r.obs)}</span>` : ""}</td>
+      <td class="forn c-forn">${esc(r.fornecedor)}${r.item ? `<span class="obs">${esc(r.item)}</span>` : ""}${r.notas ? `<span class="obs obs-nf">NF ${esc(r.notas)}</span>` : ""}${r.obs ? `<span class="obs obs-a">${esc(r.obs)}</span>` : ""}</td>
       <td class="c-sel">${seloContrato(contratoDe(r))}</td>
       <td class="din c-num" data-l="Previstos">${fmt(r.volPrev)} <small class="un">${unid(r)}</small></td>
       <td class="din c-num" data-l="Antecipados">${fmt(r.volAnt)} <small class="un">${unid(r)}</small></td>
@@ -2093,7 +2134,7 @@ function abrirGavetaAnt(rec, agenda) {
     data: (agenda && agenda.data) || S.date || todayISO(), cd: CDS.includes(S.cdAnt) ? S.cdAnt : ultimoCd,
     fornecedor: agenda ? agenda.fornecedor : "", item: "", contrato: "auto", unidade: "CX",
     volPrev: agenda ? agenda.volumes : null, volAnt: agenda ? agenda.volumes : null, cargas: 1, antecipadas: 1,
-    tipo: "", situacao: "", valor: agenda ? agenda.peso : null, obs: "", agenda: agenda ? agenda.id : "",
+    tipo: "", situacao: "antecipada", valor: agenda ? agenda.peso : null, obs: "", notas: agenda ? agenda.notaPedido : "", agenda: agenda ? agenda.id : "",
   };
   const est = { cd: CDS.includes(r.cd) ? r.cd : ultimoCd, unidade: r.unidade || "CX", tipo: r.tipo || "", situacao: r.situacao || "" };
   const seg = (campo, opcoes) => opcoes.map(([v, n]) => `<button type="button" data-v="${v}" class="${est[campo] === v ? "on" : ""}">${n}</button>`).join("");
@@ -2101,7 +2142,7 @@ function abrirGavetaAnt(rec, agenda) {
     cd: () => seg("cd", CDS.map((c) => [c, c])),
     unidade: () => seg("unidade", [["CX", "CX"], ["KG", "KG"]]),
     tipo: () => seg("tipo", Object.entries(TIPOS)),
-    situacao: () => seg("situacao", Object.entries(SITUACOES).map(([k, v]) => [k, v.nome.replace("Agenda ", "")])),
+    situacao: () => seg("situacao", Object.entries(SITUACOES).map(([k, v]) => [k, v.nome])),
   };
   const nomeAuto = (f) => { const c = contratoAuto(f); return c ? CONTRATOS[c].nome.toLowerCase() : "lista não importada"; };
   const opcoesContrato = (f, atual) => `<option value="auto">Automático (pela lista): ${nomeAuto(f)}</option>` +
@@ -2123,6 +2164,7 @@ function abrirGavetaAnt(rec, agenda) {
             <div class="field c6"><label for="aForn">Razão social do fornecedor <span class="req">*</span></label><input class="input" id="aForn" list="dlFornA" value="${esc(r.fornecedor)}" placeholder="Fornecedor"></div>
             <div class="field c3"><label for="aItem">Item</label><input class="input" id="aItem" value="${esc(r.item)}" placeholder="Ex.: Bala Fini, Ovomaltine"></div>
             <div class="field c3"><label for="aContr">Situação do contrato</label><select class="input" id="aContr">${opcoesContrato(r.fornecedor, r.contrato)}</select></div>
+            <div class="field c6"><label for="aNf">Notas fiscais</label><input class="input" id="aNf" value="${esc(r.notas || "")}" placeholder="Números das NFs, separados por vírgula. Ex.: 123456, 123457"></div>
           </div>
         </section>
         <section class="card">
@@ -2171,6 +2213,7 @@ function abrirGavetaAnt(rec, agenda) {
       data, cd: est.cd, fornecedor: forn, item: $("#aItem").value.trim(), contrato: $("#aContr").value, unidade: est.unidade,
       volPrev: parseNum($("#aPrev").value), volAnt: parseNum($("#aVAnt").value), cargas: parseNum($("#aCargas").value),
       antecipadas: parseNum($("#aAnt").value), tipo: est.tipo, situacao: est.situacao, valor: parseNum($("#aValor").value), obs: $("#aObs").value.trim(),
+      notas: $("#aNf").value.trim().replace(/\s*[,;]\s*/g, ", ").replace(/,\s*$/, ""),
     };
     PREFS.cdAnt = est.cd; S.date = data; salvarPrefs();
     fecharCamadas();
@@ -2207,10 +2250,10 @@ function exportarAntecipadas() {
       "Situação do Contrato": CONTRATOS[contratoDe(r)] ? CONTRATOS[contratoDe(r)].nome.toUpperCase() : "", "Unidade (CX/KG)": unid(r),
       "Qtd. Volumes Previstos": r.volPrev ?? "", "Qtd. Volumes Antecipados": r.volAnt ?? "", "Quantidade de Cargas": r.cargas ?? "",
       "Tipo de Carga": (TIPOS[r.tipo] || "").toUpperCase(), "Situação da carga": SITUACOES[r.situacao] ? SITUACOES[r.situacao].nome.toUpperCase() : "",
-      "Valor Total da Carga (R$)": r.valor ?? "", "Observação": r.obs,
+      "Valor Total da Carga (R$)": r.valor ?? "", "Notas Fiscais": r.notas || "", "Observação": r.obs,
     }));
     const ws = XLSX.utils.json_to_sheet(linhas);
-    ws["!cols"] = [12, 14, 44, 24, 24, 10, 12, 12, 10, 13, 22, 16, 36].map((wch) => ({ wch }));
+    ws["!cols"] = [12, 14, 44, 24, 24, 10, 12, 12, 10, 13, 18, 16, 24, 36].map((wch) => ({ wch }));
     ws["!autofilter"] = { ref: ws["!ref"] };
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, `Agendamento ${CDS.join(" e ")}`);
@@ -2704,7 +2747,7 @@ if (!NUVEM) {
 }
 renderShell();
 atualizarTudo();
-if (NUVEM) conectarNuvem();
+if (NUVEM) conectarNuvem(); else fecharDiasAnteriores();
 setTimeout(() => ensureXLSX().catch(() => {}), 0);
 
 </script>
