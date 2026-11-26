@@ -532,6 +532,19 @@ table.t { width: 100%; border-collapse: separate; border-spacing: 0; }
 .rupt-lista li .selo svg { color: var(--amber-600); }
 @media (max-width: 1180px) { .duas-col.duas-iguais { grid-template-columns: minmax(0, 1fr); } }
 
+/* ---------------------------------------------------------------- listas sem rolagem lateral (telas de 1280 px ou mais) */
+.t td.forn { min-width: 170px; max-width: 250px; }
+.t td.c-num[data-l="Nota/Ped."] { white-space: normal; max-width: 110px; overflow-wrap: anywhere; }
+.t td.c-obs { min-width: 110px; max-width: 190px; }
+.tag-prio em, .tag-ant em { max-width: 130px; }
+.t .c-conf .seg-sm button { padding: 0 8px; gap: 4px; }
+.t td.c-ed { padding-left: 4px; padding-right: 8px; }
+@media (max-width: 1600px) and (min-width: 641px) { .t .c-conf .seg-sm svg.i { display: none; } }
+@media (max-width: 1400px) and (min-width: 641px) {
+  .card-lista .t th, .card-lista .t td { padding-left: 7px; padding-right: 7px; }
+  .t td.forn { max-width: 220px; }
+}
+
 </style>
 </head>
 <body>
