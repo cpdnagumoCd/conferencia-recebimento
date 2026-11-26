@@ -1113,6 +1113,23 @@ function salvarLocalAnt() {
 function findAnt(id) { return S.ants.find((r) => r.id === id) || null; }
 /** Identifica um lançamento pelo conteúdo (importar a planilha de novo não repete). */
 const chaveAnt = (r) => [r.data, r.cd, chaveForn(r.fornecedor), norm(r.item), r.volPrev ?? "", r.valor ?? ""].join("|");
+/** Campos que a planilha de controle traz (observação e vínculo com a agenda só existem no app). */
+const CAMPOS_PLANILHA = ["unidade", "volPrev", "volAnt", "cargas", "antecipadas", "tipo", "situacao", "valor", "contrato"];
+const num = (v) => (v === null || v === undefined || v === "" || isNaN(v) ? null : Math.round(Number(v) * 1000) / 1000);
+const valorCampo = (k, v) => (NUM_A.includes(k) ? num(v) : String(v ?? ""));
+/** "auto" na planilha = fórmula pela lista de contratos: não desfaz um acordo pontual escolhido no app. */
+const contratoMudou = (atual, novo) => novo !== "auto" && novo !== atual;
+const igualAnt = (e, r) => e.cd === r.cd && chaveForn(e.fornecedor) === chaveForn(r.fornecedor) && norm(e.item) === norm(r.item)
+  && CAMPOS_PLANILHA.every((k) => (k === "contrato" ? !contratoMudou(e.contrato, r.contrato) : valorCampo(k, e[k]) === valorCampo(k, r[k])));
+function camposMudados(e, r) {
+  const c = {};
+  CAMPOS_PLANILHA.forEach((k) => {
+    if (k === "contrato") { if (contratoMudou(e.contrato, r.contrato)) c.contrato = r.contrato; }
+    else if (valorCampo(k, e[k]) !== valorCampo(k, r[k])) c[k] = r[k];
+  });
+  if (e.fornecedor !== r.fornecedor) c.fornecedor = r.fornecedor; // mesma empresa, grafia nova
+  return c;
+}
 
 function camposGravadosA(id, campos) {
   const upd = {};
@@ -1146,40 +1163,72 @@ const BDA = {
     const ultimo = !S.ants.some((x) => x.data === rec.data && x.id !== rec.id);
     (ultimo ? docAnt(rec.data).delete() : docAnt(rec.data).update({ [`itens.${rec.id}`]: FV.delete() })).catch(falhaGravacao);
   },
-  /** Inclui vários lançamentos sem repetir (planilha de controle ou backup): mesmo id ou mesmo conteúdo = já existe. */
+  /**
+   * Inclui vários lançamentos (planilha de controle ou backup) sem repetir:
+   *  1. mesmo id, ou linha igual em todos os campos da planilha          -> já existe, nada muda;
+   *  2. mesma data, fornecedor e item, mas algum número/situação mudou  -> atualiza o lançamento que já existe
+   *     (a observação e o vínculo com a agenda, que só existem no app, ficam);
+   *  3. o resto                                                           -> lançamento novo.
+   * Do backup (restaurado), o que falta volta como estava (sem o passo 2). Lançamentos que saíram da planilha não são apagados.
+   */
   async incluir(recs) {
-    const total = { novas: 0, repetidas: 0, dias: new Set() };
+    const total = { novas: 0, atualizadas: 0, repetidas: 0, dias: new Set() };
     const plano = (existentes, lista) => {
       const ids = new Set(existentes.map((r) => r.id));
-      const cont = {};
-      existentes.forEach((r) => { const k = chaveAnt(r); cont[k] = (cont[k] || 0) + 1; });
-      const novos = [];
+      const usados = new Set();
+      const novos = [], atualizar = [], sobra = [];
+      const achar = (cond) => existentes.find((e) => !usados.has(e.id) && cond(e));
       lista.forEach((r) => {
-        const k = chaveAnt(r);
-        if (ids.has(r.id) || cont[k] > 0) { if (!ids.has(r.id)) cont[k]--; total.repetidas++; return; }
-        novos.push(r);
+        if (ids.has(r.id)) { usados.add(r.id); total.repetidas++; return; }
+        const m = achar((e) => igualAnt(e, r));
+        if (m) { usados.add(m.id); total.repetidas++; }
+        else if (r.restaurado) novos.push(r);
+        else sobra.push(r);
       });
-      return novos;
+      // mesma linha da planilha com valores novos: primeiro a que ainda tem o mesmo valor ou volume previsto, depois qualquer uma
+      const mesmaLinha = (e, r) => e.cd === r.cd && chaveForn(e.fornecedor) === chaveForn(r.fornecedor) && norm(e.item) === norm(r.item);
+      const pendentes = [];
+      sobra.forEach((r) => {
+        const m = achar((e) => mesmaLinha(e, r) && (num(e.valor) === num(r.valor) || num(e.volPrev) === num(r.volPrev)));
+        if (m) { usados.add(m.id); atualizar.push({ rec: m, campos: camposMudados(m, r) }); } else pendentes.push(r);
+      });
+      pendentes.forEach((r) => {
+        const m = achar((e) => mesmaLinha(e, r));
+        if (m) { usados.add(m.id); atualizar.push({ rec: m, campos: camposMudados(m, r) }); } else novos.push(r);
+      });
+      return { novos, atualizar };
     };
     const porDia = {};
     recs.forEach((r) => (porDia[r.data] = porDia[r.data] || []).push(r));
+    const conta = (dia, p) => {
+      total.novas += p.novos.length; total.atualizadas += p.atualizar.length;
+      if (p.novos.length || p.atualizar.length) total.dias.add(dia);
+    };
     for (const [dia, lista] of Object.entries(porDia)) {
       if (!NUVEM) {
-        const novos = plano(S.ants.filter((r) => r.data === dia), lista);
-        S.ants.push(...novos); total.novas += novos.length; if (novos.length) total.dias.add(dia);
+        const p = plano(S.ants.filter((r) => r.data === dia), lista);
+        S.ants.push(...p.novos);
+        p.atualizar.forEach(({ rec, campos }) => Object.assign(findAnt(rec.id), campos));
+        conta(dia, p);
         continue;
       }
-      const novos = await db.runTransaction(async (tx) => {
+      // transação: se duas pessoas importarem ao mesmo tempo, nada é duplicado
+      const p = await db.runTransaction(async (tx) => {
         const snap = await tx.get(docAnt(dia));
-        const n = plano(snap.exists ? registrosDoDocA(dia, snap.data()) : [], lista);
-        if (n.length) {
+        const pl = plano(snap.exists ? registrosDoDocA(dia, snap.data()) : [], lista);
+        if (pl.novos.length || pl.atualizar.length) {
           const itens = {};
-          n.forEach((r) => (itens[r.id] = codificarA(r)));
+          pl.novos.forEach((r) => (itens[r.id] = codificarA(r)));
+          pl.atualizar.forEach(({ rec, campos }) => {
+            const parcial = {};
+            Object.entries(camposGravadosA(rec.id, campos)).forEach(([path, v]) => (parcial[path.split(".")[2]] = v));
+            itens[rec.id] = parcial;
+          });
           tx.set(docAnt(dia), { data: dia, itens }, { merge: true });
         }
-        return n;
+        return pl;
       });
-      total.novas += novos.length; if (novos.length) total.dias.add(dia);
+      conta(dia, p);
     }
     if (!NUVEM) { salvarLocalAnt(); aoMudarDados(); }
     return total;
@@ -1511,13 +1560,17 @@ function importarControle(files) {
         const dias = new Set(lanc.map((r) => r.data));
         const sim = await confirmar({
           titulo: "Trazer também os lançamentos?",
-          texto: `A planilha tem <b>${plural(lanc.length, "lançamento", "lançamentos")}</b> de cargas (${esc(abasCd.map(([, c]) => "CD " + c).join(" e "))}) em ${plural(dias.size, "dia", "dias")}. Os que já estão no app não são repetidos.`,
+          texto: `A planilha tem <b>${plural(lanc.length, "lançamento", "lançamentos")}</b> de cargas (${esc(abasCd.map(([, c]) => "CD " + c).join(" e "))}) em ${plural(dias.size, "dia", "dias")}. Os novos entram, os que mudaram na planilha são atualizados (a observação feita no app fica) e os iguais não se repetem.`,
           ok: "Importar lançamentos", cancelar: "Só a lista de contratos",
         });
         if (sim) {
           toast("Importando os lançamentos…", "info");
           const r = await BDA.incluir(lanc);
-          toast(r.novas ? `${plural(r.novas, "lançamento importado", "lançamentos importados")} em ${plural(r.dias.size, "dia", "dias")}${r.repetidas ? ` · ${r.repetidas} já existia(m)` : ""}.` : `Nada novo: os ${r.repetidas} lançamentos já estavam no app.`, r.novas ? "ok" : "info");
+          const partes = [];
+          if (r.novas) partes.push(plural(r.novas, "lançamento novo", "lançamentos novos"));
+          if (r.atualizadas) partes.push(plural(r.atualizadas, "atualizado", "atualizados"));
+          if (r.repetidas) partes.push(`${fmt(r.repetidas)} sem mudança`);
+          toast(r.novas || r.atualizadas ? `${partes.join(" · ")} (em ${plural(r.dias.size, "dia", "dias")}).` : `Nada novo: os ${fmt(r.repetidas)} lançamentos já estavam iguais no app.`, r.novas || r.atualizadas ? "ok" : "info");
         }
       }
     } catch (e) {

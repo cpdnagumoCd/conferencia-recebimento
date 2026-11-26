@@ -50,7 +50,9 @@ Não é preciso ativar o Authentication: o app não tem login nem pede nome; que
 - **Cargas antecipadas**: registra as antecipações do CD 2 como na planilha *CONTROLE DE AGENDAMENTO* (fornecedor, item, situação do
   contrato, unidade, volumes previstos e antecipados, cargas, tipo e situação da carga, valor). A lista **Previsão pela agenda** traz as
   agendas do dia: **Registrar** já preenche fornecedor, valor e volumes. **Importar planilha** lê a aba *Fornecedores com Contrato*
-  (atualize todo dia) e, se você quiser, os lançamentos da aba *Agendamento CD 2*, sem repetir. O app trabalha só com o **CD 2**.
+  (atualize todo dia) e, se você quiser, os lançamentos da aba *Agendamento CD 2*. O app trabalha só com o **CD 2**.
+  Lançamento novo entra; linha alterada na planilha (mesma data, fornecedor e item) atualiza o lançamento que já existe,
+  mantendo a observação feita no app; linha igual não se repete; linha apagada da planilha continua no app.
   Quem não está na lista conta como **sem contrato logístico**; no lançamento dá para trocar por acordo pontual ou compra por oportunidade.
 - **Dashboard**: cargas agendadas (relatório do Acrux) × cargas antecipadas por dia, com resumos por situação do contrato,
   tipo e situação da carga, e o recebimento das agendas no período escolhido.
