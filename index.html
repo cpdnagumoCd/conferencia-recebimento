@@ -820,13 +820,22 @@ const todasAsDatas = () => REDE.desde === "";
 const docDia = (d) => db.collection("dias").doc(d);
 
 /* ---- formato compacto gravado no Firestore (o mesmo usado pelo backup diário) */
-const CAMPOS = { origem: "t", empresa: "e", fornecedor: "f", notaPedido: "n", peso: "v", volumes: "q", tipoCarga: "c", tipoEntrega: "d", status: "s", conferidoEm: "h", obs: "o" };
+const CAMPOS = { origem: "t", empresa: "e", fornecedor: "f", notaPedido: "n", peso: "v", volumes: "q", tipoCarga: "c", tipoEntrega: "d", status: "s", conferidoEm: "h", obs: "o", rel: "r" };
+// rel: valores do relatório que foram trocados no app (ex.: nota digitada). Só existe na agenda editada; serve para a
+// importação seguinte reconhecer a agenda pelo que o relatório traz (sem isso ela entrava de novo, duplicada).
+const CAMPOS_ORIGEM = ["fornecedor", "notaPedido", "peso", "volumes"];
 const COD = { status: { pendente: "p", recebido: "r", nao_recebido: "n" }, origem: { sem_agenda: "s" } }; // aguardando e agenda = campo ausente
 const DECOD = { status: { p: "pendente", r: "recebido", n: "nao_recebido" }, origem: { s: "sem_agenda" } };
 const PADRAO = { status: "aguardando", origem: "agenda" };
 /** Valor gravado de um campo; null = não gravar (vazio ou padrão). */
 function codValor(campo, v) {
   if (COD[campo]) return COD[campo][v] || null;
+  if (campo === "rel") {
+    if (!v || typeof v !== "object") return null;
+    const o = {};
+    CAMPOS_ORIGEM.forEach((k) => { if (Object.prototype.hasOwnProperty.call(v, k)) o[CAMPOS[k]] = v[k] ?? null; });
+    return Object.keys(o).length ? o : null;
+  }
   if (v === undefined || v === null || v === "" || (typeof v === "number" && isNaN(v))) return null;
   return v;
 }
@@ -840,10 +849,18 @@ function decodificar(id, dia, r) {
   if (!r || typeof r !== "object") return null;
   // formato antigo (nomes longos), ou campo longo gravado por um aparelho ainda com a versão anterior aberta
   const longo = (k) => r[k] !== undefined && r[CAMPOS[k]] === undefined;
-  const antigo = Object.keys(CAMPOS).some(longo);
+  const antigo = Object.keys(CAMPOS).some((k) => k !== "rel" && longo(k));
   const rec = { id, data: dia, antigo };
   Object.keys(CAMPOS).forEach((k) => {
     const v = longo(k) ? r[k] : r[CAMPOS[k]];
+    if (k === "rel") { // aceita o compacto (Firestore) e o de nomes longos (backup)
+      rec.rel = {};
+      if (v && typeof v === "object") CAMPOS_ORIGEM.forEach((kk) => {
+        const x = v[CAMPOS[kk]] !== undefined ? v[CAMPOS[kk]] : v[kk];
+        if (x !== undefined) rec.rel[kk] = (kk === "peso" || kk === "volumes") ? (typeof x === "number" ? x : null) : String(x ?? "");
+      });
+      return;
+    }
     // no formato antigo "pendente" era o estado inicial, que agora se chama "aguardando entrega"
     if (COD[k]) rec[k] = longo(k) ? (v && v !== "pendente" ? v : PADRAO[k]) : (DECOD[k][v] || PADRAO[k]);
     else if (k === "peso" || k === "volumes") rec[k] = typeof v === "number" ? v : null;
@@ -1180,37 +1197,53 @@ function salvarLocal() {
 function lerLocal() { return carregarLocal().map((r) => decodificar(r.id, r.data, Object.assign({}, r, { id: undefined, data: undefined }))).filter(Boolean); }
 
 /* ---------------------------------------------------------------- importação sem repetir */
-const CAMPOS_RELATORIO = ["empresa", "peso", "volumes", "tipoCarga", "tipoEntrega"];
+const CAMPOS_RELATORIO = ["empresa", "notaPedido", "peso", "volumes", "tipoCarga", "tipoEntrega"];
+/** Valor do campo como veio do relatório (antes de ser trocado no app). */
+const doRelatorio = (e, k) => (e.rel && Object.prototype.hasOwnProperty.call(e.rel, k) ? e.rel[k] : e[k]);
+const mesmoNum = (a, b) => (a ?? null) === (b ?? null);
 /**
- * Compara o que chegou (relatório ou backup) com o que já existe no dia:
- *  1. agenda igual (fornecedor, nota, valor e volumes)        -> já existia, nada muda;
- *  2. mesmo fornecedor e nota, mas valor/volumes diferentes  -> atualiza os valores (status e observação ficam);
- *  3. o resto                                                  -> agenda nova.
+ * Compara o que chegou (relatório ou backup) com o que já existe no dia. A agenda existente é vista como o relatório a
+ * trouxe (nota, valor e volumes trocados no app não contam) e o fornecedor ignora pontos e acentos ("LTDA" = "LTDA."):
+ *  1. agenda igual (fornecedor, nota, valor e volumes)                 -> já existia, nada muda;
+ *  2. mesmo fornecedor, valor e volumes, nota diferente               -> é a mesma (nota digitada no app): fica a do app;
+ *  3. mesmo fornecedor e nota, mas valor/volumes diferentes           -> atualiza os valores (status e observação ficam);
+ *  4. o resto                                                          -> agenda nova.
+ * Campo trocado no app continua com o valor do app (só a referência do relatório é atualizada).
  * Registro que já existe com o mesmo id (backup) não muda. Do backup, o que falta volta como estava
- * (sem o passo 2); sem agenda é sempre novo.
+ * (sem os passos 2 e 3); sem agenda é sempre novo.
  */
 function planejar(existentes, recs) {
   const ags = existentes.filter((r) => r.origem === "agenda");
   const ids = new Set(existentes.map((r) => r.id));
   const usados = new Set();
-  const novos = [], atualizar = [], sobra = [];
+  const novos = [], atualizar = [];
   let repetidas = 0;
   const achar = (cond) => ags.find((e) => !usados.has(e.id) && cond(e));
-  const restantes = [];
+  const mesmoForn = (e, r) => chaveForn(doRelatorio(e, "fornecedor")) === chaveForn(r.fornecedor);
+  const mesmosValores = (e, r) => mesmoNum(doRelatorio(e, "peso"), r.peso) && mesmoNum(doRelatorio(e, "volumes"), r.volumes);
+  const mesmaNota = (e, r) => norm(doRelatorio(e, "notaPedido")) === norm(r.notaPedido);
+  const restantes = [], sobra = [], sobra2 = [];
   recs.forEach((r) => { if (ids.has(r.id)) { usados.add(r.id); repetidas++; } else restantes.push(r); });
   restantes.forEach((r) => {
     if (r.origem !== "agenda") { novos.push(r); return; }
-    const m = achar((e) => chave(e) === chave(r));
+    const m = achar((e) => mesmoForn(e, r) && mesmaNota(e, r) && mesmosValores(e, r));
     if (m) { usados.add(m.id); repetidas++; } else if (r.restaurado) novos.push(r); else sobra.push(r);
   });
-  sobra.forEach((r) => {
-    const m = achar((e) => norm(e.fornecedor) === norm(r.fornecedor) && norm(e.notaPedido) === norm(r.notaPedido));
-    if (!m) { novos.push(r); return; }
+  const atualiza = (m, r) => {
     usados.add(m.id);
-    const campos = {};
-    CAMPOS_RELATORIO.forEach((k) => { if (String(r[k] ?? "") !== String(m[k] ?? "")) campos[k] = r[k]; });
+    const campos = {}, rel = Object.assign({}, m.rel || {});
+    CAMPOS_RELATORIO.forEach((k) => {
+      const novo = r[k], velho = doRelatorio(m, k);
+      if (String(novo ?? "") === String(velho ?? "")) return;
+      if (Object.prototype.hasOwnProperty.call(rel, k) || (k === "notaPedido" && !String(novo ?? "") && m.notaPedido)) {
+        rel[k] = novo ?? (k === "notaPedido" ? "" : null); // trocado no app: o app manda, guarda só o do relatório
+      } else campos[k] = novo;
+    });
+    if (JSON.stringify(rel) !== JSON.stringify(m.rel || {})) campos.rel = rel;
     if (Object.keys(campos).length) atualizar.push({ rec: m, campos }); else repetidas++;
-  });
+  };
+  sobra.forEach((r) => { const m = achar((e) => mesmoForn(e, r) && mesmosValores(e, r)); if (m) atualiza(m, r); else sobra2.push(r); });
+  sobra2.forEach((r) => { const m = achar((e) => mesmoForn(e, r) && mesmaNota(e, r)); if (m) atualiza(m, r); else novos.push(r); });
   return { novos, atualizar, repetidas };
 }
 
@@ -1592,9 +1625,6 @@ function lerPlanilha(buf) {
   });
   return out;
 }
-
-/** Identifica uma agenda pelo conteúdo: o mesmo relatório importado de novo não repete nada. */
-const chave = (r) => [r.data, norm(r.fornecedor), norm(r.notaPedido), r.volumes ?? "", r.peso ?? ""].join("|");
 
 const novaAgenda = (row) => Object.assign({ id: uid(), origem: "agenda", status: "aguardando", conferidoEm: "", obs: "" }, row, { data: row.data || S.date || todayISO() });
 
@@ -2844,6 +2874,15 @@ function abrirGaveta(rec) {
       const campos = {};
       Object.keys(dados).forEach((k) => { if (String(dados[k] ?? "") !== String(rec[k] ?? "")) campos[k] = dados[k]; });
       if (status !== rec.status) Object.assign(campos, { status }, conf);
+      if (rec.origem === "agenda") {
+        const rel = Object.assign({}, rec.rel || {});
+        CAMPOS_ORIGEM.forEach((k) => {
+          if (!(k in campos)) return;
+          if (!Object.prototype.hasOwnProperty.call(rel, k)) rel[k] = rec[k] ?? (k === "peso" || k === "volumes" ? null : "");
+          if (String(rel[k] ?? "") === String(campos[k] ?? "")) delete rel[k]; // voltou ao que veio no relatório
+        });
+        if (JSON.stringify(rel) !== JSON.stringify(rec.rel || {})) campos.rel = rel;
+      }
       if (Object.keys(campos).length) {
         BD.alterar(rec, campos);
         toast("Registro atualizado.");

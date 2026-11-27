@@ -43,7 +43,9 @@ Não é preciso ativar o Authentication: o app não tem login nem pede nome; que
   cada agenda entra na sua data e aparece na hora para todos.
 - **Importar de novo não repete nada**: agendas iguais (fornecedor, nota, valor e volumes) são ignoradas. Se o valor ou os volumes de
   uma agenda mudaram, ela é atualizada e o que já foi marcado (status, horário, observação) é mantido. Agendas que saíram do
-  relatório não são apagadas.
+  relatório não são apagadas. Nota, valor ou volumes corrigidos no app (ex.: nota digitada no recebimento) continuam valendo:
+  a agenda guarda o que veio no relatório e a próxima importação a reconhece, sem duplicar. Grafias como "LTDA" e "LTDA." contam
+  como o mesmo fornecedor.
 - **Quem controla o recebimento**: tela **Recebimento**, botões **Pendente** (amarelo) / **Recebido** / **Não recebido** em cada agenda, e
   **Recebido sem agenda** para cargas sem agendamento. Sem nenhum botão marcado, a agenda fica cinza, como **Aguardando entrega**;
   clicar de novo no botão marcado desmarca. Agendas de **dias anteriores** que ficaram em Aguardando entrega passam sozinhas
