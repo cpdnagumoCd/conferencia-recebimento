@@ -41,7 +41,9 @@ Não é preciso ativar o Authentication: o app não tem login nem pede nome; que
 
 - **Quem importa o relatório**: menu **Importar relatório** > arraste o `.xls` do Acrux. O relatório pode trazer **vários dias**;
   cada agenda entra na sua data e aparece na hora para todos.
-- **Importar de novo não repete nada**: agendas iguais (fornecedor, nota, valor e volumes) são ignoradas. Se o valor ou os volumes de
+- **Importar de novo não repete nada**: cada agenda é reconhecida pelo **box e horário de início** (o box se repete no dia,
+  um por horário, mas o par box + horário não). A agenda que já está no mesmo box é mantida e só atualizada, nunca duplicada;
+  se só o horário mudou no mesmo box e fornecedor, também é a mesma. Agendas iguais (fornecedor, nota, valor e volumes) são ignoradas. Se o valor ou os volumes de
   uma agenda mudaram, ela é atualizada e o que já foi marcado (status, horário, observação) é mantido. Agendas que saíram do
   relatório não são apagadas. Nota, valor ou volumes corrigidos no app (ex.: nota digitada no recebimento) continuam valendo:
   a agenda guarda o que veio no relatório e a próxima importação a reconhece, sem duplicar. Grafias como "LTDA" e "LTDA." contam

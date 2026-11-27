@@ -820,7 +820,8 @@ const todasAsDatas = () => REDE.desde === "";
 const docDia = (d) => db.collection("dias").doc(d);
 
 /* ---- formato compacto gravado no Firestore (o mesmo usado pelo backup diário) */
-const CAMPOS = { origem: "t", empresa: "e", fornecedor: "f", notaPedido: "n", peso: "v", volumes: "q", tipoCarga: "c", tipoEntrega: "d", status: "s", conferidoEm: "h", obs: "o", rel: "r" };
+const CAMPOS = { origem: "t", empresa: "e", fornecedor: "f", notaPedido: "n", peso: "v", volumes: "q", tipoCarga: "c", tipoEntrega: "d", status: "s", conferidoEm: "h", obs: "o", rel: "r", box: "b", horaInicio: "i" };
+// box + hora de início: o que identifica a agenda no relatório (o box se repete no dia, um por horário). Não aparecem na tela.
 // rel: valores do relatório que foram trocados no app (ex.: nota digitada). Só existe na agenda editada; serve para a
 // importação seguinte reconhecer a agenda pelo que o relatório traz (sem isso ela entrava de novo, duplicada).
 const CAMPOS_ORIGEM = ["fornecedor", "notaPedido", "peso", "volumes"];
@@ -1204,11 +1205,15 @@ const mesmoNum = (a, b) => (a ?? null) === (b ?? null);
 /**
  * Compara o que chegou (relatório ou backup) com o que já existe no dia. A agenda existente é vista como o relatório a
  * trouxe (nota, valor e volumes trocados no app não contam) e o fornecedor ignora pontos e acentos ("LTDA" = "LTDA."):
+ *  0. mesmo box e hora de início (o que não se repete no dia)          -> é a mesma agenda: atualiza o que mudou;
+ *     mesmo box e fornecedor, outro horário                            -> é a mesma agenda (horário mudou);
  *  1. agenda igual (fornecedor, nota, valor e volumes)                 -> já existia, nada muda;
  *  2. mesmo fornecedor, valor e volumes, nota diferente               -> é a mesma (nota digitada no app): fica a do app;
  *  3. mesmo fornecedor e nota, mas valor/volumes diferentes           -> atualiza os valores (status e observação ficam);
  *  4. o resto                                                          -> agenda nova.
- * Campo trocado no app continua com o valor do app (só a referência do relatório é atualizada).
+ * Campo trocado no app continua com o valor do app (só a referência do relatório é atualizada). Agenda importada antes de o
+ * box ser guardado é achada pelos passos 1 a 3 e recebe o box e o horário (sem contar como atualizada).
+ * Se o box/horário já é de outro fornecedor e essa agenda já foi marcada por alguém, a linha do relatório é tratada à parte.
  * Registro que já existe com o mesmo id (backup) não muda. Do backup, o que falta volta como estava
  * (sem os passos 2 e 3); sem agenda é sempre novo.
  */
@@ -1222,28 +1227,45 @@ function planejar(existentes, recs) {
   const mesmoForn = (e, r) => chaveForn(doRelatorio(e, "fornecedor")) === chaveForn(r.fornecedor);
   const mesmosValores = (e, r) => mesmoNum(doRelatorio(e, "peso"), r.peso) && mesmoNum(doRelatorio(e, "volumes"), r.volumes);
   const mesmaNota = (e, r) => norm(doRelatorio(e, "notaPedido")) === norm(r.notaPedido);
-  const restantes = [], sobra = [], sobra2 = [];
+  const restantes = [], semBox = [], sobra = [], sobra2 = [];
+  const temBox = (x) => !!norm(x.box);
+  const mesmoBox = (e, r) => temBox(e) && norm(e.box) === norm(r.box);
   recs.forEach((r) => { if (ids.has(r.id)) { usados.add(r.id); repetidas++; } else restantes.push(r); });
-  restantes.forEach((r) => {
-    if (r.origem !== "agenda") { novos.push(r); return; }
-    const m = achar((e) => mesmoForn(e, r) && mesmaNota(e, r) && mesmosValores(e, r));
-    if (m) { usados.add(m.id); repetidas++; } else if (r.restaurado) novos.push(r); else sobra.push(r);
-  });
   const atualiza = (m, r) => {
     usados.add(m.id);
     const campos = {}, rel = Object.assign({}, m.rel || {});
+    let silencioso = true; // só box/horário gravados (agenda importada antes): não conta como atualizada
+    ["box", "horaInicio"].forEach((k) => { if (r[k] && String(r[k]) !== String(m[k] ?? "")) campos[k] = r[k]; });
+    if (temBox(m) && Object.keys(campos).length) silencioso = false; // horário mudou
+    if (!mesmoForn(m, r) && !Object.prototype.hasOwnProperty.call(rel, "fornecedor")) { campos.fornecedor = r.fornecedor; silencioso = false; }
     CAMPOS_RELATORIO.forEach((k) => {
       const novo = r[k], velho = doRelatorio(m, k);
       if (String(novo ?? "") === String(velho ?? "")) return;
       if (Object.prototype.hasOwnProperty.call(rel, k) || (k === "notaPedido" && !String(novo ?? "") && m.notaPedido)) {
         rel[k] = novo ?? (k === "notaPedido" ? "" : null); // trocado no app: o app manda, guarda só o do relatório
-      } else campos[k] = novo;
+      } else { campos[k] = novo; silencioso = false; }
     });
     if (JSON.stringify(rel) !== JSON.stringify(m.rel || {})) campos.rel = rel;
-    if (Object.keys(campos).length) atualizar.push({ rec: m, campos }); else repetidas++;
+    if (!Object.keys(campos).length) repetidas++;
+    else if (silencioso) { atualizar.push({ rec: m, campos, silencioso }); repetidas++; }
+    else atualizar.push({ rec: m, campos });
   };
+  // 0. pelo box: mesmo box e hora de início; depois mesmo box e fornecedor (horário mudou)
+  const marcada = (e) => e.status !== "aguardando";
+  restantes.forEach((r) => {
+    if (r.origem !== "agenda") { novos.push(r); return; }
+    if (r.restaurado || !temBox(r)) { semBox.push(r); return; }
+    const m = achar((e) => mesmoBox(e, r) && e.horaInicio === r.horaInicio && (mesmoForn(e, r) || !marcada(e)))
+      || achar((e) => mesmoBox(e, r) && mesmoForn(e, r));
+    if (m) atualiza(m, r); else semBox.push(r);
+  });
+  semBox.forEach((r) => {
+    const m = achar((e) => mesmoForn(e, r) && mesmaNota(e, r) && mesmosValores(e, r));
+    if (m && !r.restaurado && temBox(r)) atualiza(m, r); // mesma agenda em outro box (ou importada antes do box)
+    else if (m) { usados.add(m.id); repetidas++; } else if (r.restaurado) novos.push(r); else sobra.push(r);
+  });
   sobra.forEach((r) => { const m = achar((e) => mesmoForn(e, r) && mesmosValores(e, r)); if (m) atualiza(m, r); else sobra2.push(r); });
-  sobra2.forEach((r) => { const m = achar((e) => mesmoForn(e, r) && mesmaNota(e, r)); if (m) atualiza(m, r); else novos.push(r); });
+  sobra2.forEach((r) => { const m = achar((e) => mesmoForn(e, r) && mesmaNota(e, r) && (!temBox(e) || !temBox(r))); if (m) atualiza(m, r); else novos.push(r); });
   return { novos, atualizar, repetidas };
 }
 
@@ -1290,9 +1312,10 @@ const BD = {
   async incluir(recs) {
     const total = { novas: 0, atualizadas: 0, repetidas: 0, primeira: null, dias: new Set() };
     const conta = (dia, p) => {
-      total.novas += p.novos.length; total.atualizadas += p.atualizar.length; total.repetidas += p.repetidas;
+      const mudou = p.atualizar.filter((a) => !a.silencioso).length;
+      total.novas += p.novos.length; total.atualizadas += mudou; total.repetidas += p.repetidas;
       total.dias.add(dia);
-      if ((p.novos.length || p.atualizar.length) && (!total.primeira || dia < total.primeira)) total.primeira = dia;
+      if ((p.novos.length || mudou) && (!total.primeira || dia < total.primeira)) total.primeira = dia;
     };
     const porDia = {};
     recs.forEach((r) => (porDia[r.data] = porDia[r.data] || []).push(r));
@@ -1596,6 +1619,7 @@ function linhasDaAba(ws, maxCol = 40, maxLin = 60000) {
   return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: "", range: r, blankrows: false });
 }
 
+const boxCurto = (v) => String(v ?? "").trim().replace(/^doca\s*/i, "");
 function lerPlanilha(buf) {
   const wb = abrirPlanilha(buf);
   const out = [];
@@ -1615,9 +1639,10 @@ function lerPlanilha(buf) {
       if (!forn) continue; // linhas vazias e "Total Geral"
       let data = toISODate(g("data"));
       if (!data && typeof g("horaInicio") === "number" && g("horaInicio") >= 1) data = excelSerialToISO(g("horaInicio"));
-      // Box, horário e paletes do relatório não são usados (só ajudam a achar o cabeçalho e a data).
+      // Box + hora de início identificam a agenda (não aparecem na tela); paletes e hora de fim não são usados.
       out.push({
         empresa: String(g("empresa")).trim(), data, notaPedido: String(g("notaPedido")).trim(), fornecedor: forn,
+        box: boxCurto(g("box")), horaInicio: toTime(g("horaInicio")),
         peso: parseNum(g("peso")), volumes: parseNum(g("volumes")),
         tipoCarga: String(g("tipoCarga")).trim(), tipoEntrega: String(g("tipoEntrega")).trim(),
       });
