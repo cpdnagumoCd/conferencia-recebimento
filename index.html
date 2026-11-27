@@ -1269,6 +1269,73 @@ function planejar(existentes, recs) {
   return { novos, atualizar, repetidas };
 }
 
+/**
+ * Relatório do Acrux: o dia fica com as agendas do relatório (nem mais, nem menos).
+ * Cada linha do relatório fica com uma agenda do app, escolhida nesta ordem:
+ *  - mesmo box e hora de início (outro fornecedor só se a agenda ainda não foi marcada); depois mesmo box e fornecedor;
+ *  - entre agendas do mesmo fornecedor, a que tem mais informação da equipe (recebida, pendente, não recebida, com nota,
+ *    com observação), para que uma cópia criada por uma importação anterior não tome o lugar da agenda recebida;
+ *  - depois a mais parecida (valor, volumes, nota).
+ * Linha sem agenda -> agenda nova. Agenda que sobrou (cancelada/remarcada no Acrux ou cópia) -> sai do dia
+ * (só com opcoes.remover). Nota, valor e volumes digitados no app continuam valendo; o do relatório fica em "rel".
+ * Recebimentos sem agenda não são tocados.
+ */
+const riqueza = (e) => (e.status === "recebido" ? 4 : e.status === "pendente" ? 3 : e.status === "nao_recebido" && e.conferidoEm ? 2 : 0)
+  + (norm(e.notaPedido) ? 2 : 0) + (e.obs ? 1 : 0);
+function planejarEspelho(existentes, recs, remover) {
+  const ags = existentes.filter((r) => r.origem === "agenda");
+  const novos = [], atualizar = [], excluir = [];
+  let repetidas = 0;
+  const mesmoForn = (e, r) => chaveForn(doRelatorio(e, "fornecedor")) === chaveForn(r.fornecedor);
+  const temBox = (x) => !!norm(x.box);
+  const mesmoBox = (e, r) => temBox(e) && temBox(r) && norm(e.box) === norm(r.box);
+  const perto = (a, b) => { a = Number(a) || 0; b = Number(b) || 0; return 1 - Math.min(1, Math.abs(a - b) / Math.max(1, Math.abs(a), Math.abs(b))); };
+  const nota = (r) => norm(r.notaPedido);
+  const pontos = (e, r) => {
+    const forn = mesmoForn(e, r);
+    const boxHora = mesmoBox(e, r) && e.horaInicio === r.horaInicio;
+    if (!forn) return boxHora && !riqueza(e) ? 9e6 : -1; // box reaproveitado por outro fornecedor
+    let s = boxHora ? 1e7 : mesmoBox(e, r) ? 5e6 : 0;
+    s += riqueza(e) * 1e4;
+    const pv = mesmoNum(doRelatorio(e, "peso"), r.peso), qv = mesmoNum(doRelatorio(e, "volumes"), r.volumes);
+    s += pv && qv ? 600 : (pv ? 150 : 0) + (qv ? 150 : 0);
+    if (nota(r) && norm(doRelatorio(e, "notaPedido")) === nota(r)) s += 300;
+    s += Math.round(50 * (perto(doRelatorio(e, "peso"), r.peso) + perto(doRelatorio(e, "volumes"), r.volumes)));
+    return s;
+  };
+  const linhas = recs.filter((r) => r.origem === "agenda");
+  recs.filter((r) => r.origem !== "agenda").forEach((r) => novos.push(r));
+  const pares = [];
+  linhas.forEach((r, i) => ags.forEach((e) => { const s = pontos(e, r); if (s >= 0) pares.push([s, i, e]); }));
+  pares.sort((a, b) => b[0] - a[0]);
+  const linhaDe = new Map(), usada = new Set();
+  pares.forEach(([, i, e]) => { if (!usada.has(i) && !linhaDe.has(e.id)) { usada.add(i); linhaDe.set(e.id, linhas[i]); } });
+  linhas.forEach((r, i) => { if (!usada.has(i)) novos.push(r); });
+  ags.forEach((e) => {
+    const r = linhaDe.get(e.id);
+    if (!r) { if (remover) excluir.push(e); else repetidas++; return; }
+    const campos = {}, rel = Object.assign({}, e.rel || {});
+    let silencioso = true; // só box/horário/referência gravados: não conta como atualizada
+    ["box", "horaInicio"].forEach((k) => { if (r[k] && String(r[k]) !== String(e[k] ?? "")) { campos[k] = r[k]; if (temBox(e)) silencioso = false; } });
+    if (!mesmoForn(e, r) && !Object.prototype.hasOwnProperty.call(rel, "fornecedor")) { campos.fornecedor = r.fornecedor; silencioso = false; }
+    // nota digitada antes de a agenda guardar o que veio do relatório: nota, valor e volumes são os do app
+    const doApp = !Object.keys(rel).length && nota(e) && !nota(r) ? ["notaPedido", "peso", "volumes"] : [];
+    CAMPOS_RELATORIO.forEach((k) => {
+      const novo = r[k], velho = doRelatorio(e, k);
+      if (String(novo ?? "") === String(velho ?? "")) return;
+      if (Object.prototype.hasOwnProperty.call(rel, k) || doApp.includes(k)) rel[k] = novo ?? (k === "notaPedido" ? "" : null);
+      else { campos[k] = novo; if (CAMPOS_ORIGEM.includes(k)) silencioso = false; } // empresa e tipos: atualiza sem avisar
+    });
+    if (JSON.stringify(rel) !== JSON.stringify(e.rel || {})) campos.rel = rel;
+    if (!Object.keys(campos).length) repetidas++;
+    else if (silencioso) { atualizar.push({ rec: e, campos, silencioso }); repetidas++; }
+    else atualizar.push({ rec: e, campos });
+  });
+  return { novos, atualizar, excluir, repetidas };
+}
+/** Relatório (não backup): o dia segue o relatório. */
+const ehRelatorio = (lista) => lista.some((r) => r.origem === "agenda") && !lista.some((r) => r.restaurado);
+
 /** Campos alterados no formato gravado ("itens.<id>.<campo>"), apagando os que ficaram vazios. */
 function camposGravados(id, campos) {
   const upd = {};
@@ -1309,30 +1376,50 @@ const BD = {
     docDia(d).delete().catch(falhaGravacao);
   },
   /** Inclui vários registros sem repetir (relatório com vários dias, backup ou dados antigos do navegador). */
-  async incluir(recs) {
-    const total = { novas: 0, atualizadas: 0, repetidas: 0, primeira: null, dias: new Set() };
-    const conta = (dia, p) => {
-      const mudou = p.atualizar.filter((a) => !a.silencioso).length;
-      total.novas += p.novos.length; total.atualizadas += mudou; total.repetidas += p.repetidas;
-      total.dias.add(dia);
-      if ((p.novos.length || mudou) && (!total.primeira || dia < total.primeira)) total.primeira = dia;
-    };
+  /** O que a importação do relatório faria, sem gravar (para confirmar as agendas que saem). */
+  async previa(recs, vazios = []) {
     const porDia = {};
     recs.forEach((r) => (porDia[r.data] = porDia[r.data] || []).push(r));
+    vazios.forEach((d) => (porDia[d] = porDia[d] || []));
+    const out = { saem: [], dias: 0, linhas: recs.length };
+    for (const [dia, lista] of Object.entries(porDia)) {
+      if (lista.length && !ehRelatorio(lista)) continue;
+      out.dias++;
+      const existentes = NUVEM ? await docDia(dia).get().then((snap) => (snap.exists ? registrosDoDoc(dia, snap.data()) : []))
+        : S.records.filter((r) => r.data === dia);
+      out.saem.push(...planejarEspelho(existentes, lista, true).excluir);
+    }
+    return out;
+  },
+  async incluir(recs, opcoes = {}) {
+    const total = { novas: 0, atualizadas: 0, repetidas: 0, removidas: 0, primeira: null, dias: new Set() };
+    const conta = (dia, p) => {
+      const mudou = p.atualizar.filter((a) => !a.silencioso).length, saem = (p.excluir || []).length;
+      total.novas += p.novos.length; total.atualizadas += mudou; total.repetidas += p.repetidas; total.removidas += saem;
+      total.dias.add(dia);
+      if ((p.novos.length || mudou || saem) && (!total.primeira || dia < total.primeira)) total.primeira = dia;
+    };
+    const planoDe = (existentes, lista) => (!lista.length || ehRelatorio(lista) ? planejarEspelho(existentes, lista, !!opcoes.remover) : planejar(existentes, lista));
+    const porDia = {};
+    recs.forEach((r) => (porDia[r.data] = porDia[r.data] || []).push(r));
+    if (opcoes.remover) (opcoes.vazios || []).forEach((d) => (porDia[d] = porDia[d] || [])); // dia que saiu do relatório
     for (const [dia, lista] of Object.entries(porDia)) {
       if (!NUVEM) {
-        const p = planejar(S.records.filter((r) => r.data === dia), lista);
+        const p = planoDe(S.records.filter((r) => r.data === dia), lista);
         S.records.push(...p.novos);
         p.atualizar.forEach(({ rec, campos }) => Object.assign(findRec(rec.id), campos));
+        const sai = new Set((p.excluir || []).map((r) => r.id));
+        if (sai.size) S.records = S.records.filter((r) => !sai.has(r.id));
         conta(dia, p);
         continue;
       }
       // Transação: se duas pessoas importarem ao mesmo tempo, nada é duplicado.
       const p = await db.runTransaction(async (tx) => {
         const snap = await tx.get(docDia(dia));
-        const plano = planejar(snap.exists ? registrosDoDoc(dia, snap.data()) : [], lista);
-        if (plano.novos.length || plano.atualizar.length) {
+        const plano = Object.assign({ excluir: [] }, planoDe(snap.exists ? registrosDoDoc(dia, snap.data()) : [], lista));
+        if (plano.novos.length || plano.atualizar.length || plano.excluir.length) {
           const itens = {};
+          plano.excluir.forEach((r) => (itens[r.id] = FV.delete()));
           plano.novos.forEach((r) => (itens[r.id] = codificar(r)));
           plano.atualizar.forEach(({ rec, campos }) => {
             const parcial = {};
@@ -1697,7 +1784,28 @@ function importarArquivos(files) {
         const ra = await BDA.incluir(ants);
         if (ra.novas) toast(`${plural(ra.novas, "carga antecipada restaurada", "cargas antecipadas restauradas")} do backup.`);
       }
-      concluirImportacao(await BD.incluir(linhas), erros);
+      // relatório: o dia fica igual ao relatório; agendas que não estão mais nele saem (com confirmação)
+      let remover = false;
+      // dias do período do relatório que o app tem e o relatório não traz mais (todas as agendas canceladas/remarcadas)
+      const datas = linhas.map((r) => r.data).filter(Boolean).sort(), noRel = new Set(datas);
+      const vazios = backup || !datas.length ? [] : [...new Set(S.records.filter((r) => r.origem === "agenda" && r.data >= datas[0] && r.data <= datas[datas.length - 1] && !noRel.has(r.data)).map((r) => r.data))];
+      const pre = !backup && linhas.length ? await BD.previa(linhas, vazios) : { saem: [] };
+      if (pre.saem.length) {
+        const marcadas = pre.saem.filter((r) => riqueza(r) > 0);
+        const porDia = {};
+        pre.saem.forEach((r) => (porDia[r.data] = (porDia[r.data] || 0) + 1));
+        const dias = Object.keys(porDia).sort();
+        remover = await confirmar({
+          titulo: "Atualizar as agendas pelo relatório?",
+          texto: `<p>O relatório tem <b>${fmt(pre.linhas)}</b> agendas em ${plural(pre.dias, "dia", "dias")}. Para cada dia ficar igual a ele,
+            <b>${plural(pre.saem.length, "agenda sai", "agendas saem")}</b> do app: canceladas ou remarcadas no Acrux, ou cópias de importações anteriores.</p>
+            <p>${dias.slice(0, 8).map((d) => `${isoToBR(d).slice(0, 5)}: ${porDia[d]}`).join(" · ")}${dias.length > 8 ? " · …" : ""}</p>
+            ${marcadas.length ? `<p>${plural(marcadas.length, "delas foi marcada", "delas foram marcadas")} pela equipe (cópias ou agendas remarcadas). Entre agendas do mesmo fornecedor, fica sempre a que tem mais informação: recebida, com nota, com observação.</p>` : ""}
+            <p>Recebimentos sem agenda não mudam. O backup diário guarda uma cópia.</p>`,
+          ok: "Atualizar pelo relatório", cancelar: "Só acrescentar",
+        });
+      }
+      concluirImportacao(await BD.incluir(linhas, { remover, vazios }), erros);
     } catch (e) {
       falhaGravacao(e);
     } finally { importando = false; fecharDiasAnteriores(); }
@@ -1713,8 +1821,9 @@ function concluirImportacao(total, erros) {
   const partes = [];
   if (total.novas) partes.push(plural(total.novas, "agenda nova", "agendas novas"));
   if (total.atualizadas) partes.push(`${plural(total.atualizadas, "atualizada", "atualizadas")} (valor ou volumes)`);
+  if (total.removidas) partes.push(`${plural(total.removidas, "removida", "removidas")} (não estão mais no relatório)`);
   if (total.repetidas) partes.push(`${total.repetidas} já existia(m)`);
-  if (total.novas || total.atualizadas) toast(`${partes.join(" · ")} em ${plural(dias.length, "dia", "dias")}${dias.length > 1 ? ` (${isoToBR(dias[0])} a ${isoToBR(dias[dias.length - 1])})` : ""}.`);
+  if (total.novas || total.atualizadas || total.removidas) toast(`${partes.join(" · ")} em ${plural(dias.length, "dia", "dias")}${dias.length > 1 ? ` (${isoToBR(dias[0])} a ${isoToBR(dias[dias.length - 1])})` : ""}.`);
   else if (total.repetidas) toast(`Nada novo: as ${total.repetidas} agendas já estavam importadas.`, "info");
   if (erros.length) toast(`Nenhuma agenda encontrada em: ${erros.join(", ")}.`, "erro");
   if (dias.length) irPara("conferencia"); else atualizarTudo();
